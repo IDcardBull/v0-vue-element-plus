@@ -71,21 +71,16 @@
             <el-tag :type="actionTag(row.action)" size="small">{{ actionText(row.action) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="描述" prop="desc" min-width="280" show-overflow-tooltip />
-        <el-table-column label="IP 地址" prop="ip" width="140" />
-        <el-table-column label="结果" width="90" align="center">
+        <el-table-column label="描述" prop="desc" min-width="220" show-overflow-tooltip />
+        <el-table-column label="IP 地址" prop="ip" width="130" />
+        <el-table-column label="结果" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.status === 'success' ? 'success' : 'danger'" size="small" effect="dark">
               {{ row.status === 'success' ? '成功' : '失败' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="耗时" width="90" align="right">
-          <template #default="{ row }">
-            <span>{{ row.duration }} ms</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="90" fixed="right">
+        <el-table-column label="操作" width="80" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="handleDetail(row)">详情</el-button>
           </template>
