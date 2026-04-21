@@ -48,7 +48,7 @@ const routes: RouteRecordRaw[] = [
           {
             path: 'brand',
             name: 'ProductBrand',
-            component: () => import('@/views/Placeholder.vue'),
+            component: () => import('@/views/product/BrandList.vue'),
             meta: { title: '品牌管理' },
           },
         ],
@@ -63,19 +63,19 @@ const routes: RouteRecordRaw[] = [
           {
             path: 'stock',
             name: 'InventoryStock',
-            component: () => import('@/views/Placeholder.vue'),
+            component: () => import('@/views/inventory/StockList.vue'),
             meta: { title: '实时库存' },
           },
           {
             path: 'warning',
             name: 'InventoryWarning',
-            component: () => import('@/views/Placeholder.vue'),
+            component: () => import('@/views/inventory/StockWarning.vue'),
             meta: { title: '库存预警' },
           },
           {
             path: 'record',
             name: 'InventoryRecord',
-            component: () => import('@/views/Placeholder.vue'),
+            component: () => import('@/views/inventory/StockRecord.vue'),
             meta: { title: '出入库记录' },
           },
         ],
@@ -111,7 +111,7 @@ const routes: RouteRecordRaw[] = [
           {
             path: 'customer',
             name: 'UserCustomer',
-            component: () => import('@/views/Placeholder.vue'),
+            component: () => import('@/views/user/CustomerList.vue'),
             meta: { title: '零售客户' },
           },
           {
@@ -132,19 +132,19 @@ const routes: RouteRecordRaw[] = [
           {
             path: 'account',
             name: 'SystemAccount',
-            component: () => import('@/views/Placeholder.vue'),
+            component: () => import('@/views/system/AccountList.vue'),
             meta: { title: '账号管理' },
           },
           {
             path: 'role',
             name: 'SystemRole',
-            component: () => import('@/views/Placeholder.vue'),
+            component: () => import('@/views/system/RoleList.vue'),
             meta: { title: '角色权限' },
           },
           {
             path: 'log',
             name: 'SystemLog',
-            component: () => import('@/views/Placeholder.vue'),
+            component: () => import('@/views/system/LogList.vue'),
             meta: { title: '操作日志' },
           },
         ],
