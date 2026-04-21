@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import PriceTierConfig from './PriceTierConfig.vue'
+
+const router = useRouter()
 
 /* ===================== 类型定义 ===================== */
 
@@ -148,10 +151,10 @@ function toggleRetailStatus(row: Product, val: boolean | string | number) {
 }
 
 function handleCreate() {
-  ElMessage.info('打开"新增商品"弹窗（占位）')
+  router.push('/product/create')
 }
 function handleEdit(row: Product) {
-  ElMessage.info(`编辑：${row.name}`)
+  router.push({ path: '/product/edit', query: { id: row.id } })
 }
 function handleSku(row: Product) {
   ElMessage.info(`SKU 配置：${row.name}`)
