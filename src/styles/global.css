@@ -1,0 +1,51 @@
+/* 全局重置与主题 */
+:root {
+  --ym-primary: #1f2d3d;
+  --ym-accent: #c8a96a; /* 暖金色，呼应陶瓷质感 */
+  --ym-bg: #f5f7fa;
+  --ym-border: #e4e7ed;
+  --ym-text: #303133;
+  --ym-text-secondary: #606266;
+  --ym-danger: #f56c6c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue',
+    'Microsoft YaHei', 'Segoe UI', Arial, sans-serif;
+  font-size: 14px;
+  color: var(--ym-text);
+  background-color: var(--ym-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 路由过渡动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+/* 覆盖 Element Plus 主色，呼应商务风格 */
+.el-menu--dark {
+  --el-menu-bg-color: var(--ym-primary);
+  --el-menu-hover-bg-color: #2b3b52;
+}
