@@ -18,14 +18,25 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'product',
         name: 'Product',
-        redirect: '/product/list',
+        redirect: '/product/retail',
         meta: { title: '商品管理' },
         children: [
           {
             path: 'list',
-            name: 'ProductList',
-            component: () => import('@/views/product/ProductList.vue'),
-            meta: { title: '商品列表' },
+            redirect: '/product/retail',
+            meta: { hidden: true },
+          },
+          {
+            path: 'retail',
+            name: 'ProductRetail',
+            component: () => import('@/views/product/RetailProductList.vue'),
+            meta: { title: '零售商品' },
+          },
+          {
+            path: 'wholesale',
+            name: 'ProductWholesale',
+            component: () => import('@/views/product/WholesaleProductList.vue'),
+            meta: { title: '批发商品' },
           },
           {
             path: 'create',
