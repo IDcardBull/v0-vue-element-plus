@@ -18,7 +18,7 @@ export default defineConfig({
       //   VITE_API_TARGET=http://127.0.0.1:3001 pnpm dev
       // 默认指向一个不存在端口，让请求立即失败，前端走 mock 兜底
       '/api': {
-        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:3900',
+        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:3001',
         changeOrigin: true,
       },
     },

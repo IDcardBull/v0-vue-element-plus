@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { productApi } from '@/api/product'
 
 const router = useRouter()
 const loading = ref(false)
+const tableRef = ref()
 
 /* ===================== 类型定义 ===================== */
 
@@ -120,6 +121,17 @@ const pagedList = computed(() => {
   return filteredList.value.slice(start, start + page.size)
 })
 
+async function refreshTableLayout() {
+  await nextTick()
+  tableRef.value?.doLayout?.()
+}
+
+watch(
+  () => [pagedList.value.length, page.current, page.size, loading.value],
+  () => refreshTableLayout(),
+  { flush: 'post' },
+)
+
 /* ===================== 顶部统计 ===================== */
 
 const stats = computed(() => {
@@ -169,6 +181,9 @@ function handleSku(row: RetailProduct) {
 }
 function handleCampaign(row: RetailProduct) {
   ElMessage.info(`关联营销活动：${row.name}`)
+}
+function handleRetailConfig(row: RetailProduct) {
+  ElMessage.info(`零售配置：${row.name}`)
 }
 async function handleDelist(row: RetailProduct) {
   try {
@@ -276,10 +291,12 @@ function campaignTagType(c: RetailProduct['campaign']) {
     <!-- 表格 -->
     <el-card shadow="never" class="table-card">
       <el-table
+        ref="tableRef"
         :data="pagedList"
         border
         stripe
-        style="width: 100%"
+        table-layout="fixed"
+        style="width: 100%; min-width: 1280px"
         :header-cell-style="{ background: '#fafbfc', color: '#303133', fontWeight: 600 }"
       >
         <el-table-column label="主图" width="80" align="center">
@@ -339,7 +356,7 @@ function campaignTagType(c: RetailProduct['campaign']) {
           </template>
         </el-table-column>
 
-        <el-table-column label="营销活动" width="120" align="center">
+        <el-table-column label="营销活动" width="110" align="center">
           <template #default="{ row }">
             <el-tag
               v-if="row.campaign"
@@ -353,7 +370,7 @@ function campaignTagType(c: RetailProduct['campaign']) {
           </template>
         </el-table-column>
 
-        <el-table-column label="可用库存" width="100" align="right">
+        <el-table-column label="可用库存" width="110" align="center">
           <template #default="{ row }">
             <span class="stock" :class="{ warning: row.stock_available < row.stock_warning }">
               {{ row.stock_available }}
@@ -361,7 +378,7 @@ function campaignTagType(c: RetailProduct['campaign']) {
           </template>
         </el-table-column>
 
-        <el-table-column label="上下架" width="100" align="center">
+        <el-table-column label="上下架" width="110" align="center">
           <template #default="{ row }">
             <el-switch
               :model-value="row.retail_on_sale"
@@ -374,14 +391,19 @@ function campaignTagType(c: RetailProduct['campaign']) {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="250" fixed="right">
+        <el-table-column label="操作" width="270" align="center" class-name="operation-column">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="primary" size="small" @click="handleSku(row)">SKU</el-button>
-            <el-button link type="primary" size="small" @click="handleCampaign(row)">
-              营销
-            </el-button>
-            <el-button link type="danger" size="small" @click="handleDelist(row)">下架</el-button>
+            <div class="operation-actions">
+              <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+              <el-button link type="primary" size="small" @click="handleSku(row)">SKU</el-button>
+              <el-button link type="primary" size="small" @click="handleRetailConfig(row)">
+                零售价
+              </el-button>
+              <el-button link type="primary" size="small" @click="handleCampaign(row)">
+                营销
+              </el-button>
+              <el-button link type="danger" size="small" @click="handleDelist(row)">下架</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -464,6 +486,35 @@ function campaignTagType(c: RetailProduct['campaign']) {
 
 .table-card :deep(.el-card__body) {
   padding: 0;
+  overflow-x: auto;
+}
+
+.operation-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.operation-column :deep(.cell) {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-left: 8px;
+  padding-right: 8px;
+  overflow: hidden;
+}
+
+.operation-actions :deep(.el-button) {
+  padding: 0;
+}
+
+.operation-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .product-img {
