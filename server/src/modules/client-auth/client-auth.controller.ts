@@ -32,6 +32,13 @@ export class ClientAuthController {
     return this.svc.miniLogin(dto.code)
   }
 
+  // 文档中常用别名；与 mini-login 等价
+  @Public()
+  @Post('wechat-login')
+  wechatLogin(@Body() dto: WxLoginDto) {
+    return this.svc.miniLogin(dto.code)
+  }
+
   @Public()
   @Post('phone-login')
   phoneLogin(@Body() dto: PhoneLoginDto) {
