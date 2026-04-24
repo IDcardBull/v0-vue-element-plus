@@ -11,6 +11,7 @@ export class LogService {
     keyword?: string
     action?: string
     status?: string
+    adminUserId?: number
     operatorId?: number
     startTime?: string
     endTime?: string
@@ -21,13 +22,14 @@ export class LogService {
 
     if (query.keyword) {
       where.OR = [
-        { desc: { contains: query.keyword } },
-        { operator: { contains: query.keyword } },
+        { description: { contains: query.keyword } },
+        { username: { contains: query.keyword } },
       ]
     }
     if (query.action) where.action = query.action
     if (query.status) where.status = query.status
-    if (query.operatorId) where.operatorId = Number(query.operatorId)
+    const adminUserId = query.adminUserId ?? query.operatorId
+    if (adminUserId) where.adminUserId = Number(adminUserId)
     if (query.startTime || query.endTime) {
       where.createdAt = {}
       if (query.startTime) where.createdAt.gte = new Date(query.startTime)
@@ -48,24 +50,44 @@ export class LogService {
   }
 
   async findById(id: number) {
-    return this.prisma.operationLog.findUnique({ where: { id } })
+    return this.prisma.operationLog.findUnique({ where: { id: BigInt(id) } })
   }
 
   async create(data: {
+    adminUserId?: number
     operatorId?: number
+    username?: string
     operator?: string
     module: string
     action: string
+    description?: string
     desc?: string
     method?: string
     path?: string
     ip?: string
     userAgent?: string
     params?: any
-    status: 'success' | 'fail'
+    status?: 'success' | 'fail'
     errorMsg?: string
+    durationMs?: number
     duration?: number
   }) {
-    return this.prisma.operationLog.create({ data })
+    return this.prisma.operationLog.create({
+      data: {
+        adminUserId: data.adminUserId ?? data.operatorId,
+        username: data.username ?? data.operator ?? 'system',
+        module: data.module,
+        action: data.action,
+        description: data.description ?? data.desc ?? '',
+        method: data.method,
+        path: data.path,
+        ip: data.ip,
+        userAgent: data.userAgent,
+        params: data.params ?? undefined,
+        status: data.status ?? 'success',
+        errorMsg: data.errorMsg,
+        durationMs: data.durationMs ?? data.duration,
+      },
+    })
   }
 }
