@@ -26,3 +26,13 @@ export function deleteBrand(id: number) {
 export function toggleBrandStatus(id: number, status: 'active' | 'disabled') {
   return request.patch<any, any>(`/admin/brands/${id}/status`, { status })
 }
+
+/** 聚合对象导出（供页面以 brandApi.xxx 调用） */
+export const brandApi = {
+  list: fetchBrands,
+  get: fetchBrand,
+  create: createBrand,
+  update: updateBrand,
+  remove: deleteBrand,
+  toggleStatus: toggleBrandStatus,
+}

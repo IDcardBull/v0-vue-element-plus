@@ -7,3 +7,8 @@ export function fetchLogs(params: any) {
 export function fetchLog(id: number) {
   return request.get<any, any>(`/admin/logs/${id}`)
 }
+
+export const logApi = {
+  list: fetchLogs,
+  get: fetchLog,
+}

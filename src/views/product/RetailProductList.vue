@@ -450,7 +450,7 @@ function campaignTagType(c: RetailProduct['campaign']) {
               active-text="上架"
               inactive-text="下架"
               style="--el-switch-on-color: #67c23a; --el-switch-off-color: #909399"
-              @update:model-value="(v) => toggleRetailStatus(row, v)"
+              @update:model-value="(v: string | number | boolean) => toggleRetailStatus(row, Boolean(v))"
             />
           </template>
         </el-table-column>

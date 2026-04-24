@@ -40,3 +40,13 @@ export function toggleProductStatus(id: number, status: 'on_sale' | 'off_sale') 
 export function toggleChannel(id: number, channel: 'retail' | 'wholesale', enabled: boolean) {
   return request.patch<any, any>(`/admin/products/${id}/channel`, { channel, enabled })
 }
+
+export const productApi = {
+  list: fetchProducts,
+  get: fetchProduct,
+  create: createProduct,
+  update: updateProduct,
+  remove: deleteProduct,
+  toggleStatus: toggleProductStatus,
+  toggleChannel,
+}

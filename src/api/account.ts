@@ -23,3 +23,12 @@ export function deleteAccount(id: number) {
 export function resetAccountPassword(id: number, password?: string) {
   return request.post<any, any>(`/admin/accounts/${id}/reset-password`, { password })
 }
+
+export const accountApi = {
+  list: fetchAccounts,
+  get: fetchAccount,
+  create: createAccount,
+  update: updateAccount,
+  remove: deleteAccount,
+  resetPassword: resetAccountPassword,
+}

@@ -19,3 +19,11 @@ export function updateCategory(id: number, data: any) {
 export function deleteCategory(id: number) {
   return request.delete<any, any>(`/admin/categories/${id}`)
 }
+
+export const categoryApi = {
+  tree: fetchCategoryTree,
+  get: fetchCategory,
+  create: createCategory,
+  update: updateCategory,
+  remove: deleteCategory,
+}

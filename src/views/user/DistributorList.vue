@@ -182,26 +182,43 @@ const allList = ref<Distributor[]>([
   },
 ])
 
+function mapLevel(v: any): DistLevel {
+  const s = String(v || '').toLowerCase()
+  if (['diamond', 'gold', 'silver', 'regular'].includes(s)) return s as DistLevel
+  if (['钻石'].includes(s)) return 'diamond'
+  if (['黄金', 'bronze'].includes(s)) return 'gold'
+  if (['白银'].includes(s)) return 'silver'
+  return 'regular'
+}
+function mapStatus(v: any): DistStatus {
+  const s = String(v || '').toLowerCase()
+  if (['pending', 'approved', 'rejected', 'disabled'].includes(s)) return s as DistStatus
+  return 'pending'
+}
+
 async function loadDistributors() {
   try {
     const res: any = await distributorApi.list({ page: 1, pageSize: 100 })
     const rows = (res?.list ?? []) as any[]
     if (rows.length) {
-      distributorList.value = rows.map((r: any, i: number) => ({
-        id: r.id ?? i + 1,
-        shop_name: r.shopName || r.name || '',
-        contact_name: r.contactName || r.user?.realName || '',
-        contact_phone: r.contactPhone || r.user?.phone || '',
-        level: r.level || 'bronze',
+      allList.value = rows.map((r: any, i: number) => ({
+        id: String(r.id ?? i + 1),
+        code: r.code || '',
+        company_name: r.companyName || r.shopName || r.name || '',
+        contact: r.contactName || r.user?.realName || '',
+        phone: r.contactPhone || r.user?.phone || '',
+        province: r.province || '',
+        city: r.city || '',
+        level: mapLevel(r.level),
+        status: mapStatus(r.auditStatus || r.status),
         credit_limit: Number(r.creditLimit ?? 0),
-        credit_used: Number(r.creditUsed ?? 0),
-        audit_status: r.auditStatus || 'pending',
-        region: r.region || '',
+        used_credit: Number(r.creditUsed ?? r.usedCredit ?? 0),
         order_count: Number(r.orderCount ?? 0),
         total_amount: Number(r.totalAmount ?? 0),
         join_date: r.joinDate || r.createdAt || '',
+        last_order_date: r.lastOrderDate || undefined,
         remark: r.remark || '',
-      })) as any
+      }))
     }
   } catch {
     // 保留 mock

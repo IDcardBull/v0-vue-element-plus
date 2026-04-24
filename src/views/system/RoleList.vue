@@ -150,7 +150,7 @@ const roleList = ref<Role[]>([
 
 async function loadRoles() {
   try {
-    const res: any = await roleApi.list({})
+    const res: any = await roleApi.list()
     const rows = (res?.list ?? res ?? []) as any[]
     if (Array.isArray(rows) && rows.length) {
       roleList.value = rows.map((r: any, i: number) => ({
