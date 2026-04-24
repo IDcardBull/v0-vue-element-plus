@@ -47,6 +47,10 @@ let ClientAuthController = class ClientAuthController {
     miniLogin(dto) {
         return this.svc.miniLogin(dto.code);
     }
+    // 文档中常用别名；与 mini-login 等价
+    wechatLogin(dto) {
+        return this.svc.miniLogin(dto.code);
+    }
     phoneLogin(dto) {
         return this.svc.phoneLogin(dto.phone, dto.code);
     }
@@ -63,6 +67,14 @@ __decorate([
     __metadata("design:paramtypes", [WxLoginDto]),
     __metadata("design:returntype", void 0)
 ], ClientAuthController.prototype, "miniLogin", null);
+__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, common_1.Post)('wechat-login'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [WxLoginDto]),
+    __metadata("design:returntype", void 0)
+], ClientAuthController.prototype, "wechatLogin", null);
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Post)('phone-login'),

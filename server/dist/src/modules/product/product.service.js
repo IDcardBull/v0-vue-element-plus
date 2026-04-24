@@ -35,10 +35,12 @@ let ProductService = class ProductService {
             where.retailEnabled = true;
         if (q.channel === 'wholesale')
             where.wholesaleEnabled = true;
+        const sortField = q.sortField || 'id';
+        const sortOrder = q.sortOrder || 'desc';
         const [list, total] = await this.prisma.$transaction([
             this.prisma.product.findMany({
                 where,
-                orderBy: [{ id: 'desc' }],
+                orderBy: [{ [sortField]: sortOrder }],
                 skip: (page - 1) * pageSize,
                 take: pageSize,
                 include: {
