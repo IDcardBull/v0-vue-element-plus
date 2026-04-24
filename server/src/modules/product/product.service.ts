@@ -12,6 +12,9 @@ interface ProductQuery {
   channel?: string
   page?: number
   pageSize?: number
+  /** 排序字段：id | createdAt | salesCount | retailPrice */
+  sortField?: 'id' | 'createdAt' | 'salesCount' | 'retailPrice'
+  sortOrder?: 'asc' | 'desc'
 }
 
 @Injectable()
@@ -33,10 +36,12 @@ export class ProductService {
     if (q.channel === 'retail') where.retailEnabled = true
     if (q.channel === 'wholesale') where.wholesaleEnabled = true
 
+    const sortField = q.sortField || 'id'
+    const sortOrder = q.sortOrder || 'desc'
     const [list, total] = await this.prisma.$transaction([
       this.prisma.product.findMany({
         where,
-        orderBy: [{ id: 'desc' }],
+        orderBy: [{ [sortField]: sortOrder } as any],
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {

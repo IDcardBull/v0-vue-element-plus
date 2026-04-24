@@ -17,6 +17,7 @@ import { InventoryModule } from './modules/inventory/inventory.module'
 import { OrderModule } from './modules/order/order.module'
 import { UserModule } from './modules/user/user.module'
 import { ClientAuthModule } from './modules/client-auth/client-auth.module'
+import { ClientModule } from './modules/client/client.module'
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { ClientAuthModule } from './modules/client-auth/client-auth.module'
     OrderModule,
     UserModule,
     ClientAuthModule,
+    ClientModule,
   ],
   providers: [
     // 默认所有路由需要 JWT；接口上用 @Public() 放行

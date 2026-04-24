@@ -8,6 +8,7 @@ const http_exception_filter_1 = require("./common/filters/http-exception.filter"
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule, {
         logger: ['error', 'warn', 'log'],
+        rawBody: true, // 微信支付回调解密需要读取原始 body
     });
     // 全局前缀
     app.setGlobalPrefix('api');

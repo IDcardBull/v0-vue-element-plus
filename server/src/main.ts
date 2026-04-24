@@ -7,6 +7,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter'
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log'],
+    rawBody: true, // 微信支付回调解密需要读取原始 body
   })
 
   // 全局前缀
