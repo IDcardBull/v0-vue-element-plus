@@ -123,8 +123,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { Download, Search, RefreshLeft } from '@element-plus/icons-vue'
+import { logApi } from '@/api/log'
 
 interface LogItem {
   id: number
@@ -169,6 +170,31 @@ const logList = ref<LogItem[]>([
   { id: 11, time: '2026-04-20 10:05:20', name: '王芳', account: 'finance.wf', module: '订单管理', action: 'update', desc: '审核通过退款：SO-2026-04180-336（¥1,280）', ip: '120.36.182.42', status: 'success', duration: 180 },
   { id: 12, time: '2026-04-20 09:32:18', name: '未知', account: 'unknown', module: '登录认证', action: 'login', desc: '登录失败：账号不存在（尝试 admin2）', ip: '45.123.88.201', status: 'fail', duration: 62 },
 ])
+
+async function loadLogs() {
+  try {
+    const res: any = await logApi.list({ page: 1, pageSize: 100 })
+    const rows = (res?.list ?? []) as any[]
+    if (rows.length) {
+      logList.value = rows.map((r: any, i: number) => ({
+        id: r.id ?? i + 1,
+        time: r.createdAt || r.time || '',
+        name: r.operator?.realName || r.name || '',
+        account: r.operator?.username || r.account || '',
+        module: r.module || '',
+        action: r.action || 'update',
+        desc: r.description || r.desc || '',
+        ip: r.ip || '',
+        status: r.status || 'success',
+        duration: Number(r.duration ?? 0),
+      })) as any
+    }
+  } catch {
+    // 保留 mock
+  }
+}
+
+onMounted(loadLogs)
 
 function actionTag(a: string): 'primary' | 'success' | 'warning' | 'danger' | 'info' {
   const map: any = { create: 'success', update: 'primary', delete: 'danger', login: 'info', export: 'warning' }

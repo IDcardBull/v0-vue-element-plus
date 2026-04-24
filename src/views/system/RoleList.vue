@@ -126,9 +126,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Edit, Check } from '@element-plus/icons-vue'
+import { roleApi } from '@/api/role'
 
 interface Role {
   id: number
@@ -146,6 +147,27 @@ const roleList = ref<Role[]>([
   { id: 5, code: 'cs', name: '客服', accounts: 8, desc: '售前咨询与售后工单' },
   { id: 6, code: 'sales', name: '销售', accounts: 12, desc: '分销商维护与批发订单' },
 ])
+
+async function loadRoles() {
+  try {
+    const res: any = await roleApi.list({})
+    const rows = (res?.list ?? res ?? []) as any[]
+    if (Array.isArray(rows) && rows.length) {
+      roleList.value = rows.map((r: any, i: number) => ({
+        id: r.id ?? i + 1,
+        code: r.code || '',
+        name: r.name || '',
+        accounts: Number(r.accountCount ?? r.accounts ?? 0),
+        desc: r.description || r.desc || '',
+      })) as any
+      currentRole.value = roleList.value[0]
+    }
+  } catch {
+    // 保留 mock
+  }
+}
+
+onMounted(loadRoles)
 
 const currentRole = ref<Role | null>(roleList.value[1])
 

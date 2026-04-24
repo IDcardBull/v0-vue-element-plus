@@ -115,9 +115,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DocumentAdd, Search } from '@element-plus/icons-vue'
+import { inventoryApi } from '@/api/inventory'
 
 interface WarningItem {
   id: number
@@ -211,6 +212,31 @@ const list = ref<WarningItem[]>([
     leadTime: 8,
   },
 ])
+
+async function loadWarnings() {
+  try {
+    const res: any = await inventoryApi.warnings({})
+    const rows = (res?.list ?? res ?? []) as any[]
+    if (Array.isArray(rows) && rows.length) {
+      list.value = rows.map((r: any, i: number) => ({
+        id: r.id ?? i + 1,
+        sku: r.sku?.code || r.skuCode || '',
+        productName: r.sku?.product?.name || r.productName || '',
+        spec: r.sku?.specs || r.spec || '',
+        image: r.sku?.product?.mainImage || '/placeholder.svg?height=40&width=40',
+        warehouseName: r.warehouse?.name || r.warehouseName || '',
+        available: Number(r.available ?? 0),
+        warningLine: Number(r.warningLine ?? r.safetyStock ?? 20),
+        sales30: Number(r.sales30 ?? 0),
+        leadTime: Number(r.leadTime ?? 10),
+      })) as any
+    }
+  } catch {
+    // 保留 mock
+  }
+}
+
+onMounted(loadWarnings)
 
 const filteredList = computed(() => {
   let result = list.value

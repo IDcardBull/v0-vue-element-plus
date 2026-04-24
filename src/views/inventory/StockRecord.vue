@@ -129,9 +129,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Download, Search, RefreshLeft } from '@element-plus/icons-vue'
+import { inventoryApi } from '@/api/inventory'
 
 interface StockItem {
   id: number
@@ -301,6 +302,34 @@ const recordList = ref<StockItem[]>([
     remark: '月度盘点盘亏：运输破损',
   },
 ])
+
+async function loadRecords() {
+  try {
+    const res: any = await inventoryApi.records({ page: 1, pageSize: 100 })
+    const rows = (res?.list ?? []) as any[]
+    if (rows.length) {
+      recordList.value = rows.map((r: any, i: number) => ({
+        id: r.id ?? i + 1,
+        orderNo: r.orderNo || r.code || '',
+        type: r.type || 'in',
+        warehouseName: r.warehouse?.name || r.warehouseName || '',
+        sku: r.sku?.code || r.skuCode || '',
+        productName: r.sku?.product?.name || r.productName || '',
+        spec: r.sku?.specs || r.spec || '',
+        qty: Number(r.qty ?? 0),
+        beforeQty: Number(r.beforeQty ?? 0),
+        afterQty: Number(r.afterQty ?? 0),
+        operator: r.operator || r.createdBy?.realName || '',
+        remark: r.remark || '',
+        createdAt: r.createdAt || '',
+      })) as any
+    }
+  } catch {
+    // 保留 mock
+  }
+}
+
+onMounted(loadRecords)
 
 function handleReset() {
   filter.type = ''

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
+import { distributorApi } from '@/api/distributor'
 import {
   Search,
   Refresh,
@@ -180,6 +181,34 @@ const allList = ref<Distributor[]>([
     remark: '长期未下单，已停用',
   },
 ])
+
+async function loadDistributors() {
+  try {
+    const res: any = await distributorApi.list({ page: 1, pageSize: 100 })
+    const rows = (res?.list ?? []) as any[]
+    if (rows.length) {
+      distributorList.value = rows.map((r: any, i: number) => ({
+        id: r.id ?? i + 1,
+        shop_name: r.shopName || r.name || '',
+        contact_name: r.contactName || r.user?.realName || '',
+        contact_phone: r.contactPhone || r.user?.phone || '',
+        level: r.level || 'bronze',
+        credit_limit: Number(r.creditLimit ?? 0),
+        credit_used: Number(r.creditUsed ?? 0),
+        audit_status: r.auditStatus || 'pending',
+        region: r.region || '',
+        order_count: Number(r.orderCount ?? 0),
+        total_amount: Number(r.totalAmount ?? 0),
+        join_date: r.joinDate || r.createdAt || '',
+        remark: r.remark || '',
+      })) as any
+    }
+  } catch {
+    // 保留 mock
+  }
+}
+
+onMounted(loadDistributors)
 
 /* --------------------------------- 筛选条件 -------------------------------- */
 const filters = reactive({

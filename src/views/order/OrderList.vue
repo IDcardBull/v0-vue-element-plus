@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { orderApi } from '@/api/order'
 import {
   Search,
   Refresh,
@@ -233,6 +234,39 @@ const allOrders = ref<Order[]>([
     ],
   },
 ])
+
+async function loadOrders() {
+  try {
+    const res: any = await orderApi.list({ page: 1, pageSize: 100 })
+    const rows = (res?.list ?? []) as any[]
+    if (rows.length) {
+      allOrders.value = rows.map((r: any) => ({
+        id: String(r.id),
+        order_no: r.orderNo || r.code || '',
+        status: r.status || 'pending_payment',
+        channel: r.channel || 'retail',
+        customer_name: r.customerName || r.user?.realName || r.user?.nickname || '',
+        customer_phone: r.customerPhone || r.user?.phone || '',
+        province: r.province || r.shippingAddress?.province || '',
+        city: r.city || r.shippingAddress?.city || '',
+        amount: Number(r.totalAmount ?? r.amount ?? 0),
+        paid_amount: Number(r.paidAmount ?? 0),
+        created_at: r.createdAt || r.created_at || '',
+        items: r.items?.map((it: any) => ({
+          name: it.productName || it.name || '',
+          spec: it.spec || it.skuSpecs || '',
+          price: Number(it.price ?? 0),
+          qty: Number(it.qty ?? 1),
+          image: it.image || it.cover || '/placeholder.svg?height=56&width=56',
+        })) || [],
+      })) as any
+    }
+  } catch {
+    // 保留 mock
+  }
+}
+
+onMounted(loadOrders)
 
 // 计算各状态数量
 const tabWithCount = computed(() =>

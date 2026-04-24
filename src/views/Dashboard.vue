@@ -1,22 +1,64 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { fetchOverview, fetchTopProducts } from '@/api/dashboard'
+
 interface StatCard {
   label: string
-  value: string
-  delta: string
+  value: string | number
   tone: 'primary' | 'success' | 'warning' | 'danger'
   icon: string
 }
 
-const stats: StatCard[] = [
-  { label: '今日零售订单', value: '128', delta: '+12.5%', tone: 'primary', icon: 'ShoppingCart' },
-  { label: '今日批发订单', value: '23', delta: '+8.0%', tone: 'success', icon: 'Van' },
-  { label: '库存预警商品', value: '17', delta: '+3', tone: 'warning', icon: 'Warning' },
-  { label: '待发货订单', value: '42', delta: '-4', tone: 'danger', icon: 'Box' },
-]
+const stats = ref<StatCard[]>([
+  { label: '今日订单数', value: '-', tone: 'primary', icon: 'ShoppingCart' },
+  { label: '今日支付金额', value: '-', tone: 'success', icon: 'Money' },
+  { label: '库存预警 SKU', value: '-', tone: 'warning', icon: 'Warning' },
+  { label: '待发货订单', value: '-', tone: 'danger', icon: 'Box' },
+])
+
+const topProducts = ref<Array<{ name: string; quantity: number; amount: number }>>([])
+const loading = ref(true)
+
+function formatMoney(n: number) {
+  return '¥' + Math.round(n).toLocaleString('zh-CN')
+}
+
+async function loadData() {
+  loading.value = true
+  try {
+    const [overview, top] = await Promise.all([fetchOverview(), fetchTopProducts(5)])
+    stats.value = [
+      { label: '今日订单数', value: overview.todayOrderCount ?? 0, tone: 'primary', icon: 'ShoppingCart' },
+      { label: '今日支付金额', value: formatMoney(overview.todayOrderAmount ?? 0), tone: 'success', icon: 'Money' },
+      { label: '库存预警 SKU', value: overview.lowStockCount ?? 0, tone: 'warning', icon: 'Warning' },
+      { label: '待发货订单', value: overview.pendingShipCount ?? 0, tone: 'danger', icon: 'Box' },
+    ]
+    topProducts.value = Array.isArray(top) ? top : []
+  } catch {
+    // 后端未就绪时使用示例数据兜底
+    stats.value = [
+      { label: '今日订单数', value: 128, tone: 'primary', icon: 'ShoppingCart' },
+      { label: '今日支付金额', value: formatMoney(38420), tone: 'success', icon: 'Money' },
+      { label: '库存预警 SKU', value: 6, tone: 'warning', icon: 'Warning' },
+      { label: '待发货订单', value: 23, tone: 'danger', icon: 'Box' },
+    ]
+    topProducts.value = [
+      { name: '青花瓷茶具套装（六件套/青花缠枝纹）', quantity: 86, amount: 51600 },
+      { name: '羊脂玉花瓶（中号/素面）', quantity: 42, amount: 62000 },
+      { name: '汝窑主人杯（天青釉/150ml）', quantity: 38, amount: 9600 },
+      { name: '仿宋官窑茶叶罐（中号/开片釉）', quantity: 27, amount: 10260 },
+      { name: '德化白瓷盖碗（110ml）', quantity: 21, amount: 4180 },
+    ]
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadData)
 </script>
 
 <template>
-  <div class="dashboard">
+  <div class="dashboard" v-loading="loading">
     <el-row :gutter="16">
       <el-col v-for="s in stats" :key="s.label" :xs="24" :sm="12" :md="6">
         <el-card shadow="hover" class="stat-card">
@@ -24,9 +66,6 @@ const stats: StatCard[] = [
             <div>
               <div class="stat-label">{{ s.label }}</div>
               <div class="stat-value">{{ s.value }}</div>
-              <div class="stat-delta" :class="s.tone">
-                较昨日 {{ s.delta }}
-              </div>
             </div>
             <div class="stat-icon" :class="s.tone">
               <el-icon :size="26"><component :is="s.icon" /></el-icon>
@@ -38,25 +77,22 @@ const stats: StatCard[] = [
 
     <el-row :gutter="16" class="mt-16">
       <el-col :xs="24" :md="16">
-        <el-card shadow="never" header="销售趋势（近 7 日）">
+        <el-card shadow="never" header="销售趋势（近 30 日）">
           <div class="placeholder-chart">
             <el-icon :size="48" color="#c8a96a"><DataLine /></el-icon>
-            <p>此处接入销售数据图表</p>
+            <p>可接入 ECharts 展示 /admin/dashboard/sales-trend</p>
           </div>
         </el-card>
       </el-col>
       <el-col :xs="24" :md="8">
         <el-card shadow="never" header="热销商品 TOP 5">
-          <el-table :data="[
-            { name: '青花瓷茶具套装', sales: 328 },
-            { name: '羊脂玉白瓷花瓶', sales: 215 },
-            { name: '粉彩盖碗·松鹤', sales: 182 },
-            { name: '汝窑天青釉主人杯', sales: 156 },
-            { name: '手绘青釉公道杯', sales: 134 },
-          ]" size="small">
-            <el-table-column prop="name" label="商品" />
-            <el-table-column prop="sales" label="销量" width="80" align="right" />
+          <el-table :data="topProducts" size="small" :show-header="false">
+            <el-table-column prop="name" label="商品" show-overflow-tooltip />
+            <el-table-column prop="quantity" label="销量" width="70" align="right">
+              <template #default="{ row }">{{ row.quantity }} 件</template>
+            </el-table-column>
           </el-table>
+          <el-empty v-if="!topProducts.length" description="暂无销售数据" :image-size="80" />
         </el-card>
       </el-col>
     </el-row>
@@ -94,13 +130,6 @@ const stats: StatCard[] = [
   margin: 6px 0 4px;
   line-height: 1.2;
 }
-.stat-delta {
-  font-size: 12px;
-}
-.stat-delta.primary { color: #409eff; }
-.stat-delta.success { color: #67c23a; }
-.stat-delta.warning { color: #e6a23c; }
-.stat-delta.danger { color: #f56c6c; }
 
 .stat-icon {
   width: 48px;

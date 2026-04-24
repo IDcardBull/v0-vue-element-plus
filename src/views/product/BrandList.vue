@@ -27,7 +27,7 @@
     </el-card>
 
     <el-card class="content-card" shadow="never">
-      <el-table :data="brandList" stripe border>
+      <el-table :data="brandList" stripe border v-loading="loading">
         <el-table-column label="LOGO" width="90" align="center">
           <template #default="{ row }">
             <el-avatar :src="row.logo" :size="48" shape="square" class="brand-logo">
@@ -89,6 +89,8 @@
           :page-sizes="[10, 20, 50, 100]"
           layout="total, sizes, prev, pager, next, jumper"
           background
+          @current-change="loadList"
+          @size-change="loadList"
         />
       </div>
     </el-card>
@@ -154,10 +156,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Refresh, Edit, Delete } from '@element-plus/icons-vue'
+import { brandApi } from '@/api/brand'
 
 interface Brand {
   id: number
@@ -174,6 +177,7 @@ interface Brand {
   description?: string
 }
 
+const loading = ref(false)
 const filter = reactive({
   keyword: '',
   status: '',
@@ -182,10 +186,11 @@ const filter = reactive({
 const pagination = reactive({
   page: 1,
   size: 10,
-  total: 6,
+  total: 0,
 })
 
-const brandList = ref<Brand[]>([
+/** 默认数据：后端未就绪时使用，上线后自动被 API 数据覆盖 */
+const fallbackBrands: Brand[] = [
   {
     id: 1,
     logo: '/placeholder.svg?height=48&width=48',
@@ -265,7 +270,32 @@ const brandList = ref<Brand[]>([
     status: 'inactive',
     createdAt: '2024-06-01 13:10:00',
   },
-])
+]
+
+const brandList = ref<Brand[]>([])
+
+async function loadList() {
+  loading.value = true
+  try {
+    const res: any = await brandApi.list({
+      keyword: filter.keyword,
+      status: filter.status,
+      page: pagination.page,
+      pageSize: pagination.size,
+    })
+    const rows = (res?.list ?? []) as Brand[]
+    brandList.value = rows
+    pagination.total = res?.total ?? rows.length
+  } catch (err) {
+    // 后端未就绪时使用种子数据兜底，保证前端可演示
+    brandList.value = fallbackBrands
+    pagination.total = fallbackBrands.length
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadList)
 
 const drawerVisible = ref(false)
 const formMode = ref<'create' | 'edit'>('create')
@@ -294,12 +324,15 @@ const rules: FormRules = {
 }
 
 function handleSearch() {
-  ElMessage.success('已根据筛选条件刷新列表')
+  pagination.page = 1
+  loadList()
 }
 
 function handleReset() {
   filter.keyword = ''
   filter.status = ''
+  pagination.page = 1
+  loadList()
 }
 
 function handleCreate() {
@@ -314,18 +347,28 @@ function handleEdit(row: Brand) {
   drawerVisible.value = true
 }
 
-function handleToggle(row: Brand) {
-  row.status = row.status === 'active' ? 'inactive' : 'active'
-  ElMessage.success(`已${row.status === 'active' ? '启用' : '停用'}品牌：${row.name}`)
+async function handleToggle(row: Brand) {
+  const next = row.status === 'active' ? 'inactive' : 'active'
+  try {
+    await brandApi.update(row.id, { status: next })
+    row.status = next
+    ElMessage.success(`已${next === 'active' ? '启用' : '停用'}品牌：${row.name}`)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '操作失败')
+  }
 }
 
-function handleDelete(row: Brand) {
-  ElMessageBox.confirm(`确定删除品牌「${row.name}」？该操作不可撤销。`, '删除确认', {
-    type: 'warning',
-  }).then(() => {
-    brandList.value = brandList.value.filter((b) => b.id !== row.id)
+async function handleDelete(row: Brand) {
+  try {
+    await ElMessageBox.confirm(`确定删除品牌「${row.name}」？该操作不可撤销。`, '删除确认', {
+      type: 'warning',
+    })
+    await brandApi.remove(row.id)
     ElMessage.success('删除成功')
-  }).catch(() => {})
+    loadList()
+  } catch (err: any) {
+    if (err !== 'cancel') ElMessage.error(err?.message || '删除失败')
+  }
 }
 
 function handleLogoChange(file: any) {
@@ -333,21 +376,21 @@ function handleLogoChange(file: any) {
 }
 
 function handleSubmit() {
-  formRef.value?.validate((valid) => {
+  formRef.value?.validate(async (valid) => {
     if (!valid) return
-    if (formMode.value === 'create') {
-      brandList.value.unshift({
-        ...form,
-        id: Date.now(),
-        createdAt: new Date().toLocaleString('zh-CN'),
-      })
-      ElMessage.success('品牌创建成功')
-    } else {
-      const idx = brandList.value.findIndex((b) => b.id === form.id)
-      if (idx >= 0) brandList.value[idx] = { ...form }
-      ElMessage.success('品牌信息已更新')
+    try {
+      if (formMode.value === 'create') {
+        await brandApi.create({ ...form })
+        ElMessage.success('品牌创建成功')
+      } else {
+        await brandApi.update(form.id, { ...form })
+        ElMessage.success('品牌信息已更新')
+      }
+      drawerVisible.value = false
+      loadList()
+    } catch (e: any) {
+      ElMessage.error(e?.message || '保存失败')
     }
-    drawerVisible.value = false
   })
 }
 </script>

@@ -194,11 +194,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Box, Goods, Coin, Warning, Search, Refresh, RefreshLeft, Download,
 } from '@element-plus/icons-vue'
+import { inventoryApi } from '@/api/inventory'
+
+const loading = ref(false)
 
 interface StockRow {
   id: number
@@ -372,6 +375,36 @@ const stockList = ref<StockRow[]>([
     unitPrice: 560,
   },
 ])
+
+async function loadList() {
+  loading.value = true
+  try {
+    const res: any = await inventoryApi.stockList({ page: 1, pageSize: 100 })
+    const rows = (res?.list ?? []) as any[]
+    if (rows.length) {
+      stockList.value = rows.map((r: any, i: number) => ({
+        id: r.id ?? i + 1,
+        sku: r.sku?.code || r.skuCode || '',
+        product: r.sku?.product?.name || r.productName || '',
+        cover: r.sku?.product?.mainImage || '/placeholder.svg',
+        specs: r.sku?.specs || r.specs || '',
+        warehouse: r.warehouse?.name || r.warehouseName || '主仓',
+        available: Number(r.available ?? r.availableQty ?? 0),
+        locked: Number(r.locked ?? r.lockedQty ?? 0),
+        inTransit: Number(r.inTransit ?? 0),
+        warningLine: Number(r.warningLine ?? r.safetyStock ?? 20),
+        maxStock: Number(r.maxStock ?? 200),
+        unitPrice: Number(r.unitPrice ?? r.sku?.retailPrice ?? 0),
+      })) as any
+    }
+  } catch {
+    // 保留 mock
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadList)
 
 const stats = computed(() => {
   const skuTotal = stockList.value.length

@@ -1,0 +1,476 @@
+// ========================================================
+// 央茗陶瓷 一库多端系统 - Prisma Schema (MySQL 8)
+// 覆盖 PC 管理端 14 页 + 微信小程序 + 批发 H5 的全部业务表
+// ========================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================================
+// 1. 管理端账号/角色/权限/操作日志
+// =====================================================================
+
+model AdminUser {
+  id          Int        @id @default(autoincrement())
+  username    String     @unique @db.VarChar(64)
+  password    String     @db.VarChar(255) // bcrypt hash
+  realName    String     @map("real_name") @db.VarChar(64)
+  phone       String?    @db.VarChar(20)
+  email       String?    @db.VarChar(128)
+  avatar      String?    @db.VarChar(500)
+  department  String?    @db.VarChar(64)
+  status      Int        @default(1) // 1 启用 / 0 停用
+  lastLoginAt DateTime?  @map("last_login_at")
+  lastLoginIp String?    @map("last_login_ip") @db.VarChar(64)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  roles       AdminUserRole[]
+  logs        OperationLog[]
+
+  @@map("admin_users")
+}
+
+model Role {
+  id          Int        @id @default(autoincrement())
+  code        String     @unique @db.VarChar(64) // super_admin / product_mgr ...
+  name        String     @db.VarChar(64)
+  description String?    @db.VarChar(255)
+  sort        Int        @default(0)
+  status      Int        @default(1)
+  // 权限用 JSON 存，小而快；将来可拆表
+  menuPerms   Json?      @map("menu_perms") // ["product","product:retail","product:create",...]
+  dataPerms   Json?      @map("data_perms") // {scope: "all|dept|self"}
+  apiPerms    Json?      @map("api_perms")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  users       AdminUserRole[]
+
+  @@map("roles")
+}
+
+model AdminUserRole {
+  adminUserId Int        @map("admin_user_id")
+  roleId      Int        @map("role_id")
+  adminUser   AdminUser  @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  role        Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([adminUserId, roleId])
+  @@map("admin_user_roles")
+}
+
+model OperationLog {
+  id           BigInt    @id @default(autoincrement())
+  adminUserId  Int?      @map("admin_user_id")
+  username     String    @db.VarChar(64)
+  module       String    @db.VarChar(64) // 商品/订单/分销商...
+  action       String    @db.VarChar(64) // create/update/delete/login/export...
+  description  String    @db.VarChar(500)
+  method       String?   @db.VarChar(10) // GET/POST/...
+  path         String?   @db.VarChar(255)
+  params       Json?
+  ip           String?   @db.VarChar(64)
+  userAgent    String?   @map("user_agent") @db.VarChar(500)
+  status       String    @default("success") @db.VarChar(16) // success / fail
+  errorMsg     String?   @map("error_msg") @db.VarChar(500)
+  durationMs   Int?      @map("duration_ms")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  adminUser    AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
+
+  @@index([adminUserId])
+  @@index([module, action])
+  @@index([createdAt])
+  @@map("operation_logs")
+}
+
+// =====================================================================
+// 2. 小程序/H5 用户（零售会员 + 分销商）
+// =====================================================================
+
+model User {
+  id           Int        @id @default(autoincrement())
+  openid       String?    @unique @db.VarChar(64)
+  unionid      String?    @db.VarChar(64)
+  phone        String?    @unique @db.VarChar(20)
+  nickname     String?    @db.VarChar(64)
+  avatar       String?    @db.VarChar(500)
+  gender       Int?       // 0 未知 1 男 2 女
+  role         String     @default("retail") @db.VarChar(16) // retail / dealer
+  levelId      Int?       @map("level_id")
+  points       Int        @default(0)
+  balance      Decimal    @default(0) @db.Decimal(12, 2)
+  totalSpent   Decimal    @default(0) @map("total_spent") @db.Decimal(14, 2)
+  status       Int        @default(1)
+  registeredAt DateTime   @default(now()) @map("registered_at")
+  lastActiveAt DateTime?  @map("last_active_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  level        UserLevel? @relation(fields: [levelId], references: [id], onDelete: SetNull)
+  addresses    Address[]
+  orders       Order[]
+  distributor  Distributor?
+
+  @@index([role, status])
+  @@map("users")
+}
+
+model UserLevel {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.VarChar(32) // bronze/silver/gold/diamond
+  name        String   @db.VarChar(32)
+  minSpent    Decimal  @map("min_spent") @db.Decimal(12, 2)
+  discount    Decimal  @db.Decimal(4, 2) // 0.95 九五折
+  pointsRate  Decimal  @map("points_rate") @db.Decimal(4, 2)
+  icon        String?  @db.VarChar(500)
+  description String?  @db.VarChar(255)
+
+  users       User[]
+
+  @@map("user_levels")
+}
+
+model Address {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  receiver   String   @db.VarChar(64)
+  phone      String   @db.VarChar(20)
+  province   String   @db.VarChar(32)
+  city       String   @db.VarChar(32)
+  district   String   @db.VarChar(32)
+  detail     String   @db.VarChar(255)
+  isDefault  Boolean  @default(false) @map("is_default")
+  tag        String?  @db.VarChar(16) // 家/公司/学校
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders     Order[]
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// =====================================================================
+// 3. 分销商（B 端客户，带授信、等级、审核流）
+// =====================================================================
+
+model Distributor {
+  id                Int       @id @default(autoincrement())
+  userId            Int       @unique @map("user_id")
+  companyName       String    @map("company_name") @db.VarChar(128)
+  contactName       String    @map("contact_name") @db.VarChar(64)
+  contactPhone      String    @map("contact_phone") @db.VarChar(20)
+  region            String?   @db.VarChar(64) // 江苏·宜兴
+  businessLicense   String?   @map("business_license") @db.VarChar(500) // 营业执照图
+  legalPerson       String?   @map("legal_person") @db.VarChar(64)
+  level             String    @default("normal") @db.VarChar(16) // normal/silver/gold/diamond
+  creditLimit       Decimal   @default(0) @map("credit_limit") @db.Decimal(12, 2)
+  creditUsed        Decimal   @default(0) @map("credit_used") @db.Decimal(12, 2)
+  totalPurchase     Decimal   @default(0) @map("total_purchase") @db.Decimal(14, 2)
+  lastOrderAt       DateTime? @map("last_order_at")
+  auditStatus       String    @default("pending") @map("audit_status") @db.VarChar(16) // pending/approved/rejected/disabled
+  auditRemark       String?   @map("audit_remark") @db.VarChar(500)
+  auditedBy         Int?      @map("audited_by")
+  auditedAt         DateTime? @map("audited_at")
+  salesmanId        Int?      @map("salesman_id") // 业务员 admin_users.id
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([level, auditStatus])
+  @@map("distributors")
+}
+
+// =====================================================================
+// 4. 商品分类 / 品牌
+// =====================================================================
+
+model Category {
+  id          Int        @id @default(autoincrement())
+  parentId    Int?       @map("parent_id")
+  code        String     @unique @db.VarChar(64)
+  name        String     @db.VarChar(128)
+  level       Int        @default(1)
+  sort        Int        @default(0)
+  icon        String?    @db.VarChar(500)
+  description String?    @db.VarChar(500)
+  status      Int        @default(1)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[] @relation("CategoryTree")
+  products    Product[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Brand {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.VarChar(64)
+  name        String    @db.VarChar(128)
+  logo        String?   @db.VarChar(500)
+  country     String?   @db.VarChar(64)
+  origin      String?   @db.VarChar(128) // 产地：江苏宜兴 / 江西景德镇
+  story       String?   @db.Text
+  sort        Int       @default(0)
+  status      Int       @default(1)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  products    Product[]
+
+  @@map("brands")
+}
+
+// =====================================================================
+// 5. 商品 / SKU / 规格 / 阶梯价
+// =====================================================================
+
+model Product {
+  id           Int       @id @default(autoincrement())
+  code         String    @unique @db.VarChar(64) // 商品编码
+  name         String    @db.VarChar(255)
+  categoryId   Int?      @map("category_id")
+  brandId      Int?      @map("brand_id")
+  craft        String?   @db.VarChar(64) // 手工/半手工/机制
+  material     String?   @db.VarChar(64) // 胎质：高岭土/紫砂/瓷土
+  mainImage    String?   @map("main_image") @db.VarChar(500)
+  images       Json?     // 多图数组
+  detail       String?   @db.LongText // 富文本详情
+  tags         Json?     // 标签数组
+
+  // 零售配置
+  retailEnabled    Boolean @default(true) @map("retail_enabled")
+  retailPrice      Decimal @default(0) @map("retail_price") @db.Decimal(10, 2)
+  memberPrice      Decimal? @map("member_price") @db.Decimal(10, 2)
+  costPrice        Decimal? @map("cost_price") @db.Decimal(10, 2)
+  promoActivities  Json?   @map("promo_activities") // ['满减','拼团','限时折扣','积分兑换']
+
+  // 批发配置
+  wholesaleEnabled Boolean @default(false) @map("wholesale_enabled")
+  minWholesaleQty  Int     @default(1) @map("min_wholesale_qty")
+  dealerLevels     Json?   @map("dealer_levels") // ['normal','silver','gold','diamond']
+
+  // 共用
+  salesCount       Int     @default(0) @map("sales_count") // 累计销量
+  rating           Decimal @default(0) @db.Decimal(3, 2)
+  status           Int     @default(1) // 1上架 0下架
+
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand        Brand?    @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  skus         Sku[]
+  orderItems   OrderItem[]
+
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([status, retailEnabled, wholesaleEnabled])
+  @@map("products")
+}
+
+model Sku {
+  id           Int       @id @default(autoincrement())
+  productId    Int       @map("product_id")
+  code         String    @unique @db.VarChar(64) // SKU 编码
+  specs        Json      // {颜色:青花, 尺寸:中号, 容量:200ml}
+  image        String?   @db.VarChar(500)
+  retailPrice  Decimal   @map("retail_price") @db.Decimal(10, 2)
+  memberPrice  Decimal?  @map("member_price") @db.Decimal(10, 2)
+  costPrice    Decimal?  @map("cost_price") @db.Decimal(10, 2)
+  stock        Int       @default(0) // 缓存库存，真正值取 stocks 表聚合
+  weight       Decimal?  @db.Decimal(8, 3) // kg
+  status       Int       @default(1)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  priceTiers   PriceTier[]
+  stocks       Stock[]
+  stockLogs    StockLog[]
+  orderItems   OrderItem[]
+
+  @@index([productId])
+  @@map("skus")
+}
+
+model PriceTier {
+  id        Int      @id @default(autoincrement())
+  skuId     Int      @map("sku_id")
+  minQty    Int      @map("min_qty")
+  maxQty    Int?     @map("max_qty")
+  price     Decimal  @db.Decimal(10, 2)
+  sort      Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  sku       Sku      @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@index([skuId])
+  @@map("price_tiers")
+}
+
+// =====================================================================
+// 6. 仓库 / 库存 / 流水
+// =====================================================================
+
+model Warehouse {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique @db.VarChar(32)
+  name      String    @db.VarChar(64)
+  address   String?   @db.VarChar(255)
+  manager   String?   @db.VarChar(64)
+  phone     String?   @db.VarChar(20)
+  status    Int       @default(1)
+  isDefault Boolean   @default(false) @map("is_default")
+
+  stocks    Stock[]
+  stockLogs StockLog[]
+
+  @@map("warehouses")
+}
+
+model Stock {
+  id          Int       @id @default(autoincrement())
+  skuId       Int       @map("sku_id")
+  warehouseId Int       @map("warehouse_id")
+  onHand      Int       @default(0) @map("on_hand")     // 现存量
+  reserved    Int       @default(0)                      // 占用/预占
+  inTransit   Int       @default(0) @map("in_transit")   // 在途
+  warnMin     Int       @default(10) @map("warn_min")    // 预警阈值
+  warnMax     Int       @default(1000) @map("warn_max")  // 过剩阈值
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  sku         Sku       @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([skuId, warehouseId])
+  @@map("stocks")
+}
+
+model StockLog {
+  id            BigInt    @id @default(autoincrement())
+  orderNo       String    @map("order_no") @db.VarChar(64) // 单据号
+  type          String    @db.VarChar(16) // in/out/transfer/inventory/return
+  skuId         Int       @map("sku_id")
+  warehouseId   Int       @map("warehouse_id")
+  qty           Int
+  beforeOnHand  Int       @map("before_on_hand")
+  afterOnHand   Int       @map("after_on_hand")
+  relatedId     Int?      @map("related_id") // 关联订单/采购单 id
+  relatedType   String?   @map("related_type") @db.VarChar(32)
+  operator      String    @db.VarChar(64)
+  remark        String?   @db.VarChar(500)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  sku           Sku       @relation(fields: [skuId], references: [id])
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id])
+
+  @@index([orderNo])
+  @@index([type, createdAt])
+  @@index([skuId])
+  @@map("stock_logs")
+}
+
+// =====================================================================
+// 7. 订单 / 订单项 / 发货 / 对账
+// =====================================================================
+
+model Order {
+  id               BigInt    @id @default(autoincrement())
+  orderNo          String    @unique @map("order_no") @db.VarChar(64)
+  userId           Int?      @map("user_id")
+  channel          String    @db.VarChar(16)  // retail / wholesale / livestream
+  source           String?   @db.VarChar(32) // miniprogram / h5 / admin / b2b
+  status           String    @default("pending_pay") @db.VarChar(32)
+  // 状态枚举: pending_pay/pending_ship/shipped/completed/after_sale/closed
+
+  // 金额
+  totalAmount      Decimal   @default(0) @map("total_amount") @db.Decimal(12, 2)
+  discountAmount   Decimal   @default(0) @map("discount_amount") @db.Decimal(12, 2)
+  freight          Decimal   @default(0) @db.Decimal(10, 2)
+  paidAmount       Decimal   @default(0) @map("paid_amount") @db.Decimal(12, 2)
+  // 批发专用
+  useCredit        Boolean   @default(false) @map("use_credit") // 是否授信下单
+  settled          Boolean   @default(false) // 是否已结清
+
+  // 收货
+  addressId        Int?      @map("address_id")
+  receiverSnapshot Json?     @map("receiver_snapshot") // 下单时地址快照
+
+  // 支付
+  payMethod        String?   @map("pay_method") @db.VarChar(16) // wechat / alipay / credit / bank
+  paidAt           DateTime? @map("paid_at")
+  payTransId       String?   @map("pay_trans_id") @db.VarChar(128)
+
+  // 发货
+  logisticsCompany String?   @map("logistics_company") @db.VarChar(64)
+  trackingNo       String?   @map("tracking_no") @db.VarChar(64)
+  shippedAt        DateTime? @map("shipped_at")
+  completedAt      DateTime? @map("completed_at")
+  closedAt         DateTime? @map("closed_at")
+
+  remark           String?   @db.VarChar(500)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user             User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  address          Address?    @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  items            OrderItem[]
+
+  @@index([userId, status])
+  @@index([channel, status])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         BigInt   @id @default(autoincrement())
+  orderId    BigInt   @map("order_id")
+  productId  Int      @map("product_id")
+  skuId      Int      @map("sku_id")
+  productName String  @map("product_name") @db.VarChar(255)
+  skuSpec    String?  @map("sku_spec") @db.VarChar(255)
+  skuImage   String?  @map("sku_image") @db.VarChar(500)
+  qty        Int
+  unitPrice  Decimal  @map("unit_price") @db.Decimal(10, 2)
+  subtotal   Decimal  @db.Decimal(12, 2)
+
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id])
+  sku        Sku      @relation(fields: [skuId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Statement {
+  id             Int       @id @default(autoincrement())
+  statementNo    String    @unique @map("statement_no") @db.VarChar(64)
+  distributorId  Int       @map("distributor_id")
+  periodStart    DateTime  @map("period_start")
+  periodEnd      DateTime  @map("period_end")
+  orderCount     Int       @default(0) @map("order_count")
+  totalAmount    Decimal   @map("total_amount") @db.Decimal(14, 2)
+  paidAmount     Decimal   @default(0) @map("paid_amount") @db.Decimal(14, 2)
+  status         String    @default("pending") @db.VarChar(16) // pending/partial/paid
+  dueDate        DateTime? @map("due_date")
+  settledAt      DateTime? @map("settled_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([distributorId, status])
+  @@map("statements")
+}

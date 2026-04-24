@@ -1,0 +1,45 @@
+import { Module } from '@nestjs/common'
+import { ConfigModule } from '@nestjs/config'
+import { APP_GUARD } from '@nestjs/core'
+import { PrismaModule } from './common/prisma.module'
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard'
+import { AuthModule } from './modules/auth/auth.module'
+import { AccountModule } from './modules/account/account.module'
+import { RoleModule } from './modules/role/role.module'
+import { LogModule } from './modules/log/log.module'
+import { DashboardModule } from './modules/dashboard/dashboard.module'
+import { CategoryModule } from './modules/category/category.module'
+import { BrandModule } from './modules/brand/brand.module'
+import { ProductModule } from './modules/product/product.module'
+import { SkuModule } from './modules/sku/sku.module'
+import { PriceTierModule } from './modules/price-tier/price-tier.module'
+import { InventoryModule } from './modules/inventory/inventory.module'
+import { OrderModule } from './modules/order/order.module'
+import { UserModule } from './modules/user/user.module'
+import { ClientAuthModule } from './modules/client-auth/client-auth.module'
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    PrismaModule,
+    LogModule,
+    AuthModule,
+    AccountModule,
+    RoleModule,
+    DashboardModule,
+    CategoryModule,
+    BrandModule,
+    ProductModule,
+    SkuModule,
+    PriceTierModule,
+    InventoryModule,
+    OrderModule,
+    UserModule,
+    ClientAuthModule,
+  ],
+  providers: [
+    // 默认所有路由需要 JWT；接口上用 @Public() 放行
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+  ],
+})
+export class AppModule {}
