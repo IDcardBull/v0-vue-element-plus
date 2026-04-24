@@ -24,16 +24,23 @@ export class DashboardService {
     ] = await Promise.all([
       this.prisma.product.count(),
       this.prisma.sku.count(),
+      // 零售客户：角色 retail 的用户
       this.prisma.user.count({ where: { role: 'retail' } }),
-      this.prisma.user.count({ where: { role: 'dealer', auditStatus: 'approved' } }),
-      this.prisma.user.count({ where: { role: 'dealer', auditStatus: 'pending' } }),
+      // 分销商：审核通过
+      this.prisma.distributor.count({ where: { auditStatus: 'approved' } }),
+      // 分销商：待审核
+      this.prisma.distributor.count({ where: { auditStatus: 'pending' } }),
+      // 今日订单数
       this.prisma.order.count({ where: { createdAt: { gte: todayStart, lte: todayEnd } } }),
+      // 今日已付金额：paidAt 非空
       this.prisma.order.aggregate({
-        where: { createdAt: { gte: todayStart, lte: todayEnd }, payStatus: 'paid' },
-        _sum: { actualAmount: true },
+        where: { createdAt: { gte: todayStart, lte: todayEnd }, paidAt: { not: null } },
+        _sum: { paidAmount: true },
       }),
-      this.prisma.order.count({ where: { status: 'paid' } }),
-      this.prisma.sku.count({ where: { stockAvailable: { lte: 20 } } }),
+      // 待发货：已付款但未发货
+      this.prisma.order.count({ where: { status: 'pending_ship' } }),
+      // 低库存 SKU（以 SKU 缓存的 stock 字段为准，若为 0 需改为聚合 stocks 表）
+      this.prisma.sku.count({ where: { stock: { lte: 20 } } }),
     ])
 
     return {
@@ -43,7 +50,7 @@ export class DashboardService {
       dealerCount,
       pendingAuditCount,
       todayOrderCount,
-      todayOrderAmount: Number(todayOrderAmount._sum.actualAmount || 0),
+      todayOrderAmount: Number(todayOrderAmount._sum?.paidAmount ?? 0),
       pendingShipCount,
       lowStockCount,
     }
@@ -55,8 +62,8 @@ export class DashboardService {
     start.setHours(0, 0, 0, 0)
 
     const orders = await this.prisma.order.findMany({
-      where: { createdAt: { gte: start }, payStatus: 'paid' },
-      select: { createdAt: true, actualAmount: true, channel: true },
+      where: { createdAt: { gte: start }, paidAt: { not: null } },
+      select: { createdAt: true, paidAmount: true, channel: true },
     })
 
     const map = new Map<string, { retail: number; wholesale: number }>()
@@ -69,8 +76,8 @@ export class DashboardService {
       const key = o.createdAt.toISOString().slice(0, 10)
       const entry = map.get(key)
       if (!entry) continue
-      if (o.channel === 'wholesale') entry.wholesale += Number(o.actualAmount)
-      else entry.retail += Number(o.actualAmount)
+      if (o.channel === 'wholesale') entry.wholesale += Number(o.paidAmount)
+      else entry.retail += Number(o.paidAmount)
     }
 
     return Array.from(map.entries()).map(([date, val]) => ({ date, ...val }))
@@ -79,7 +86,7 @@ export class DashboardService {
   async topProducts(limit = 10) {
     const groups = await this.prisma.orderItem.groupBy({
       by: ['productId'],
-      _sum: { quantity: true, subtotal: true },
+      _sum: { qty: true, subtotal: true },
       orderBy: { _sum: { subtotal: 'desc' } },
       take: limit,
     })
@@ -93,8 +100,8 @@ export class DashboardService {
       productId: g.productId,
       name: pm.get(g.productId)?.name || '-',
       image: pm.get(g.productId)?.mainImage || '',
-      quantity: Number(g._sum.quantity || 0),
-      amount: Number(g._sum.subtotal || 0),
+      quantity: Number(g._sum?.qty ?? 0),
+      amount: Number(g._sum?.subtotal ?? 0),
     }))
   }
 }

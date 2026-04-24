@@ -2,11 +2,31 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { PrismaService } from '../../common/prisma.service'
 import * as bcrypt from 'bcryptjs'
 
+/** 前端传入的 status 可能是 'active'/'inactive' 字符串，数据库是 Int（1/0） */
+function toStatusInt(status: any): number | undefined {
+  if (status === undefined || status === null || status === '') return undefined
+  if (typeof status === 'number') return status
+  return status === 'inactive' || status === 'disabled' || status === '0' ? 0 : 1
+}
+
+/** 把 AdminUser + 关联的 roles 扁平化成前端期望的 { ..., role: { id, name, code }, roleId } */
+function flattenAdminUser(user: any) {
+  if (!user) return user
+  const { password, roles = [], ...rest } = user
+  const firstRole = roles?.[0]?.role
+  return {
+    ...rest,
+    roleId: firstRole?.id ?? null,
+    role: firstRole ?? null,
+    roles: roles.map((r: any) => r.role).filter(Boolean),
+  }
+}
+
 @Injectable()
 export class AccountService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(query: { page?: number; pageSize?: number; keyword?: string; status?: string; roleId?: number }) {
+  async findAll(query: { page?: number; pageSize?: number; keyword?: string; status?: any; roleId?: number }) {
     const page = Number(query.page) || 1
     const pageSize = Number(query.pageSize) || 20
     const where: any = {}
@@ -18,13 +38,14 @@ export class AccountService {
         { phone: { contains: query.keyword } },
       ]
     }
-    if (query.status) where.status = query.status
-    if (query.roleId) where.roleId = Number(query.roleId)
+    const statusInt = toStatusInt(query.status)
+    if (statusInt !== undefined) where.status = statusInt
+    if (query.roleId) where.roles = { some: { roleId: Number(query.roleId) } }
 
     const [list, total] = await Promise.all([
       this.prisma.adminUser.findMany({
         where,
-        include: { role: true },
+        include: { roles: { include: { role: true } } },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -32,19 +53,16 @@ export class AccountService {
       this.prisma.adminUser.count({ where }),
     ])
 
-    // 脱敏
-    const safe = list.map(({ password, ...rest }) => rest)
-    return { list: safe, total, page, pageSize }
+    return { list: list.map(flattenAdminUser), total, page, pageSize }
   }
 
   async findById(id: number) {
     const user = await this.prisma.adminUser.findUnique({
       where: { id },
-      include: { role: true },
+      include: { roles: { include: { role: true } } },
     })
     if (!user) throw new NotFoundException('账号不存在')
-    const { password, ...rest } = user
-    return rest
+    return flattenAdminUser(user)
   }
 
   async create(data: any) {
@@ -52,6 +70,8 @@ export class AccountService {
     if (exists) throw new ConflictException('用户名已存在')
 
     const hash = await bcrypt.hash(data.password || '123456', 10)
+    const roleId = data.roleId ? Number(data.roleId) : null
+
     const created = await this.prisma.adminUser.create({
       data: {
         username: data.username,
@@ -60,13 +80,14 @@ export class AccountService {
         phone: data.phone,
         email: data.email,
         department: data.department,
-        roleId: Number(data.roleId),
-        status: data.status || 'active',
+        status: toStatusInt(data.status) ?? 1,
+        ...(roleId
+          ? { roles: { create: [{ roleId }] } }
+          : {}),
       },
-      include: { role: true },
+      include: { roles: { include: { role: true } } },
     })
-    const { password, ...rest } = created
-    return rest
+    return flattenAdminUser(created)
   }
 
   async update(id: number, data: any) {
@@ -75,18 +96,24 @@ export class AccountService {
       phone: data.phone,
       email: data.email,
       department: data.department,
-      status: data.status,
     }
-    if (data.roleId) payload.roleId = Number(data.roleId)
+    const statusInt = toStatusInt(data.status)
+    if (statusInt !== undefined) payload.status = statusInt
     if (data.password) payload.password = await bcrypt.hash(data.password, 10)
+
+    // 如果传入 roleId，则替换账号与角色的绑定
+    if (data.roleId !== undefined && data.roleId !== null && data.roleId !== '') {
+      const roleId = Number(data.roleId)
+      await this.prisma.adminUserRole.deleteMany({ where: { adminUserId: id } })
+      await this.prisma.adminUserRole.create({ data: { adminUserId: id, roleId } })
+    }
 
     const updated = await this.prisma.adminUser.update({
       where: { id },
       data: payload,
-      include: { role: true },
+      include: { roles: { include: { role: true } } },
     })
-    const { password, ...rest } = updated
-    return rest
+    return flattenAdminUser(updated)
   }
 
   async remove(id: number) {

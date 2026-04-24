@@ -1,6 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common'
 import { PrismaService } from '../../common/prisma.service'
 
+function toStatusInt(status: any): number | undefined {
+  if (status === undefined || status === null || status === '') return undefined
+  if (typeof status === 'number') return status
+  return status === 'inactive' || status === 'disabled' || status === '0' ? 0 : 1
+}
+
 @Injectable()
 export class RoleService {
   constructor(private prisma: PrismaService) {}
@@ -34,30 +40,42 @@ export class RoleService {
         name: data.name,
         code: data.code,
         description: data.description,
-        permissions: data.permissions || [],
-        dataScope: data.dataScope || 'self',
+        menuPerms: data.permissions ?? data.menuPerms ?? [],
+        dataPerms: data.dataScope ? { scope: data.dataScope } : (data.dataPerms ?? undefined),
+        apiPerms: data.apiPerms ?? undefined,
         sort: data.sort ?? 0,
-        status: data.status || 'active',
+        status: toStatusInt(data.status) ?? 1,
       },
     })
   }
 
   async update(id: number, data: any) {
+    const payload: any = {
+      name: data.name,
+      description: data.description,
+      sort: data.sort,
+    }
+    if (data.permissions !== undefined || data.menuPerms !== undefined) {
+      payload.menuPerms = data.permissions ?? data.menuPerms
+    }
+    if (data.dataScope !== undefined) {
+      payload.dataPerms = { scope: data.dataScope }
+    } else if (data.dataPerms !== undefined) {
+      payload.dataPerms = data.dataPerms
+    }
+    if (data.apiPerms !== undefined) payload.apiPerms = data.apiPerms
+    const statusInt = toStatusInt(data.status)
+    if (statusInt !== undefined) payload.status = statusInt
+
     return this.prisma.role.update({
       where: { id },
-      data: {
-        name: data.name,
-        description: data.description,
-        permissions: data.permissions,
-        dataScope: data.dataScope,
-        sort: data.sort,
-        status: data.status,
-      },
+      data: payload,
     })
   }
 
   async remove(id: number) {
-    const count = await this.prisma.adminUser.count({ where: { roleId: id } })
+    // 账号-角色 中间表统计
+    const count = await this.prisma.adminUserRole.count({ where: { roleId: id } })
     if (count > 0) {
       throw new BadRequestException(`该角色下还有 ${count} 个账号，无法删除`)
     }
@@ -68,7 +86,7 @@ export class RoleService {
   async updatePermissions(id: number, permissions: string[]) {
     return this.prisma.role.update({
       where: { id },
-      data: { permissions },
+      data: { menuPerms: permissions },
     })
   }
 }
