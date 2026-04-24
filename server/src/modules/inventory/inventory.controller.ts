@@ -55,12 +55,38 @@ export class InventoryController {
 
   @Post('op')
   async op(@Body() dto: StockOpDto, @CurrentUser() user: JwtPayload) {
+    return this.execOp(dto, user, dto.type)
+  }
+
+  // 入库
+  @Post('stock-in')
+  stockIn(@Body() dto: StockOpDto, @CurrentUser() user: JwtPayload) {
+    return this.execOp(dto, user, 'in')
+  }
+
+  // 出库
+  @Post('stock-out')
+  stockOut(@Body() dto: StockOpDto, @CurrentUser() user: JwtPayload) {
+    return this.execOp(dto, user, 'out')
+  }
+
+  // 盘点调整（支持正负 qty）
+  @Post('adjust')
+  adjust(@Body() dto: StockOpDto, @CurrentUser() user: JwtPayload) {
+    return this.execOp(dto, user, 'inventory')
+  }
+
+  private execOp(
+    dto: StockOpDto,
+    user: JwtPayload,
+    type: 'in' | 'out' | 'transfer' | 'inventory' | 'return',
+  ) {
     const orderNo =
       dto.orderNo ||
-      `${dto.type.toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+      `${type.toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`
     return this.svc.stockOp({
       orderNo,
-      type: dto.type,
+      type,
       skuId: dto.skuId,
       warehouseId: dto.warehouseId,
       qty: dto.qty,

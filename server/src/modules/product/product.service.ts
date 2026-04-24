@@ -204,6 +204,24 @@ export class ProductService {
     })
   }
 
+  /** 显式设置上下架状态（0/1） */
+  async setStatus(id: number, status: number) {
+    await this.findById(id)
+    return this.prisma.product.update({ where: { id }, data: { status } })
+  }
+
+  /** 显式设置零售开关 */
+  async setRetail(id: number, enabled: boolean) {
+    await this.findById(id)
+    return this.prisma.product.update({ where: { id }, data: { retailEnabled: enabled } })
+  }
+
+  /** 显式设置批发开关 */
+  async setWholesale(id: number, enabled: boolean) {
+    await this.findById(id)
+    return this.prisma.product.update({ where: { id }, data: { wholesaleEnabled: enabled } })
+  }
+
   /** 批量删除 */
   async batchRemove(ids: number[]) {
     return this.prisma.product.updateMany({

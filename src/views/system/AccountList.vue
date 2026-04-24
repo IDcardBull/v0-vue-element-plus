@@ -8,6 +8,13 @@
       <el-button type="primary" :icon="Plus" @click="handleCreate">新增账号</el-button>
     </div>
 
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadAccounts">点击重试</el-button>
+      </template>
+    </el-alert>
+
     <el-card class="filter-card" shadow="never">
       <el-form inline :model="filter" class="filter-form">
         <el-form-item label="关键字">
@@ -158,128 +165,31 @@ const roleList = [
 
 const filter = reactive({ keyword: '', role: '', status: '' })
 
-const accountList = ref<Account[]>([
-  {
-    id: 1,
-    username: 'admin',
-    name: '张建国',
-    phone: '138****8800',
-    email: 'zhang.jg@yangming.com',
-    dept: '总经办',
-    roleCode: 'super',
-    roleName: '超级管理员',
-    lastLogin: '2026-04-21 09:12:33',
-    lastIp: '120.36.182.55',
-    status: 'active',
-    createdAt: '2023-06-10',
-  },
-  {
-    id: 2,
-    username: 'ops.lm',
-    name: '李明',
-    phone: '186****5521',
-    email: 'li.ming@yangming.com',
-    dept: '运营中心',
-    roleCode: 'admin',
-    roleName: '运营管理员',
-    lastLogin: '2026-04-21 08:45:12',
-    lastIp: '120.36.182.63',
-    status: 'active',
-    createdAt: '2023-09-15',
-  },
-  {
-    id: 3,
-    username: 'finance.wf',
-    name: '王芳',
-    phone: '139****2266',
-    email: 'wang.fang@yangming.com',
-    dept: '财务部',
-    roleCode: 'finance',
-    roleName: '财务',
-    lastLogin: '2026-04-20 17:30:45',
-    lastIp: '120.36.182.42',
-    status: 'active',
-    createdAt: '2023-11-02',
-  },
-  {
-    id: 4,
-    username: 'wh.zq',
-    name: '赵勤',
-    phone: '157****8080',
-    email: 'zhao.qin@yangming.com',
-    dept: '仓储物流',
-    roleCode: 'warehouse',
-    roleName: '仓管',
-    lastLogin: '2026-04-21 07:58:20',
-    lastIp: '120.36.182.88',
-    status: 'active',
-    createdAt: '2024-01-18',
-  },
-  {
-    id: 5,
-    username: 'cs.liu',
-    name: '刘静',
-    phone: '159****6611',
-    email: 'liu.jing@yangming.com',
-    dept: '客户服务',
-    roleCode: 'cs',
-    roleName: '客服',
-    lastLogin: '2026-04-21 09:02:15',
-    lastIp: '120.36.182.92',
-    status: 'active',
-    createdAt: '2024-03-08',
-  },
-  {
-    id: 6,
-    username: 'sales.hu',
-    name: '胡伟',
-    phone: '180****3344',
-    email: 'hu.wei@yangming.com',
-    dept: '销售中心',
-    roleCode: 'sales',
-    roleName: '销售',
-    lastLogin: '2026-03-12 15:22:08',
-    lastIp: '120.36.182.17',
-    status: 'locked',
-    createdAt: '2024-05-22',
-  },
-  {
-    id: 7,
-    username: 'sales.xy',
-    name: '徐阳',
-    phone: '177****9900',
-    email: 'xu.yang@yangming.com',
-    dept: '销售中心',
-    roleCode: 'sales',
-    roleName: '销售',
-    lastLogin: '2025-12-18 10:05:42',
-    lastIp: '120.36.182.24',
-    status: 'inactive',
-    createdAt: '2024-08-30',
-  },
-])
+const accountList = ref<Account[]>([])
+const loadError = ref('')
 
 async function loadAccounts() {
+  loadError.value = ''
   try {
     const res: any = await accountApi.list({ page: 1, pageSize: 100 })
     const rows = (res?.list ?? []) as any[]
-    if (rows.length) {
-      accountList.value = rows.map((r: any, i: number) => ({
-        id: r.id ?? i + 1,
-        username: r.username || '',
-        realName: r.realName || '',
-        phone: r.phone || '',
-        email: r.email || '',
-        department: r.department || '',
-        roleName: r.role?.name || r.roleName || '',
-        lastLogin: r.lastLoginAt || r.lastLogin || '',
-        lastIp: r.lastLoginIp || r.lastIp || '',
-        status: r.status || 'active',
-        createdAt: r.createdAt || '',
-      })) as any
-    }
-  } catch {
-    // 保留 mock
+    accountList.value = rows.map((r: any, i: number) => ({
+      id: r.id ?? i + 1,
+      username: r.username || '',
+      name: r.realName || r.name || '',
+      phone: r.phone || '',
+      email: r.email || '',
+      dept: r.department || r.dept || '',
+      roleCode: r.role?.code || r.roleCode || '',
+      roleName: r.role?.name || r.roleName || '',
+      lastLogin: r.lastLoginAt || r.lastLogin || '',
+      lastIp: r.lastLoginIp || r.lastIp || '',
+      status: (typeof r.status === 'number' ? (r.status === 1 ? 'active' : 'inactive') : r.status) || 'active',
+      createdAt: r.createdAt || '',
+    })) as any
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    accountList.value = []
   }
 }
 

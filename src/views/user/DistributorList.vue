@@ -59,128 +59,8 @@ const statusMeta: Record<
   disabled: { label: '已禁用', type: 'info' },
 }
 
-/* --------------------------------- 模拟数据 -------------------------------- */
-const allList = ref<Distributor[]>([
-  {
-    id: 'd-1',
-    code: 'DS20260001',
-    company_name: '杭州茗茶行',
-    contact: '王建国',
-    phone: '13988889999',
-    province: '浙江',
-    city: '杭州',
-    level: 'diamond',
-    status: 'approved',
-    credit_limit: 500000,
-    used_credit: 128600,
-    order_count: 86,
-    total_amount: 1268900,
-    join_date: '2024-03-15',
-    last_order_date: '2026-04-18',
-  },
-  {
-    id: 'd-2',
-    code: 'DS20260002',
-    company_name: '北京瓷器商行',
-    contact: '李静',
-    phone: '13877776666',
-    province: '北京',
-    city: '朝阳',
-    level: 'gold',
-    status: 'approved',
-    credit_limit: 300000,
-    used_credit: 0,
-    order_count: 42,
-    total_amount: 458000,
-    join_date: '2024-08-22',
-    last_order_date: '2026-04-16',
-  },
-  {
-    id: 'd-3',
-    code: 'DS20260003',
-    company_name: '广州陶艺馆',
-    contact: '陈明达',
-    phone: '13566665555',
-    province: '广东',
-    city: '广州',
-    level: 'silver',
-    status: 'approved',
-    credit_limit: 100000,
-    used_credit: 23400,
-    order_count: 18,
-    total_amount: 136200,
-    join_date: '2025-01-10',
-    last_order_date: '2026-04-10',
-  },
-  {
-    id: 'd-4',
-    code: 'DS20260004',
-    company_name: '苏州文玩坊',
-    contact: '张雅兰',
-    phone: '13511112222',
-    province: '江苏',
-    city: '苏州',
-    level: 'regular',
-    status: 'pending',
-    credit_limit: 0,
-    used_credit: 0,
-    order_count: 0,
-    total_amount: 0,
-    join_date: '2026-04-17',
-    remark: '新注册，资质材料审核中',
-  },
-  {
-    id: 'd-5',
-    code: 'DS20260005',
-    company_name: '成都茶器阁',
-    contact: '刘芳',
-    phone: '13633334444',
-    province: '四川',
-    city: '成都',
-    level: 'gold',
-    status: 'approved',
-    credit_limit: 200000,
-    used_credit: 45000,
-    order_count: 28,
-    total_amount: 356800,
-    join_date: '2024-11-05',
-    last_order_date: '2026-04-12',
-  },
-  {
-    id: 'd-6',
-    code: 'DS20260006',
-    company_name: '武汉瓷韵贸易',
-    contact: '黄海',
-    phone: '13722223333',
-    province: '湖北',
-    city: '武汉',
-    level: 'regular',
-    status: 'rejected',
-    credit_limit: 0,
-    used_credit: 0,
-    order_count: 0,
-    total_amount: 0,
-    join_date: '2026-04-15',
-    remark: '营业执照信息不符',
-  },
-  {
-    id: 'd-7',
-    code: 'DS20260007',
-    company_name: '厦门古韵堂',
-    contact: '林雨晴',
-    phone: '13444445555',
-    province: '福建',
-    city: '厦门',
-    level: 'silver',
-    status: 'disabled',
-    credit_limit: 80000,
-    used_credit: 0,
-    order_count: 8,
-    total_amount: 52000,
-    join_date: '2025-06-20',
-    remark: '长期未下单，已停用',
-  },
-])
+const allList = ref<Distributor[]>([])
+const loadError = ref('')
 
 function mapLevel(v: any): DistLevel {
   const s = String(v || '').toLowerCase()
@@ -197,31 +77,31 @@ function mapStatus(v: any): DistStatus {
 }
 
 async function loadDistributors() {
+  loadError.value = ''
   try {
     const res: any = await distributorApi.list({ page: 1, pageSize: 100 })
     const rows = (res?.list ?? []) as any[]
-    if (rows.length) {
-      allList.value = rows.map((r: any, i: number) => ({
-        id: String(r.id ?? i + 1),
-        code: r.code || '',
-        company_name: r.companyName || r.shopName || r.name || '',
-        contact: r.contactName || r.user?.realName || '',
-        phone: r.contactPhone || r.user?.phone || '',
-        province: r.province || '',
-        city: r.city || '',
-        level: mapLevel(r.level),
-        status: mapStatus(r.auditStatus || r.status),
-        credit_limit: Number(r.creditLimit ?? 0),
-        used_credit: Number(r.creditUsed ?? r.usedCredit ?? 0),
-        order_count: Number(r.orderCount ?? 0),
-        total_amount: Number(r.totalAmount ?? 0),
-        join_date: r.joinDate || r.createdAt || '',
-        last_order_date: r.lastOrderDate || undefined,
-        remark: r.remark || '',
-      }))
-    }
-  } catch {
-    // 保留 mock
+    allList.value = rows.map((r: any, i: number) => ({
+      id: String(r.id ?? i + 1),
+      code: r.code || '',
+      company_name: r.companyName || r.shopName || r.name || '',
+      contact: r.contactName || r.user?.realName || '',
+      phone: r.contactPhone || r.user?.phone || '',
+      province: r.province || '',
+      city: r.city || '',
+      level: mapLevel(r.level),
+      status: mapStatus(r.auditStatus || r.status),
+      credit_limit: Number(r.creditLimit ?? 0),
+      used_credit: Number(r.creditUsed ?? r.usedCredit ?? 0),
+      order_count: Number(r.orderCount ?? 0),
+      total_amount: Number(r.totalAmount ?? 0),
+      join_date: r.joinDate || r.createdAt || '',
+      last_order_date: r.lastOrderDate || undefined,
+      remark: r.remark || '',
+    }))
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    allList.value = []
   }
 }
 
@@ -406,6 +286,12 @@ function viewDetail(row: Distributor) {
 
 <template>
   <div class="distributor-page">
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadDistributors">点击重试</el-button>
+      </template>
+    </el-alert>
     <!-- 顶部统计 -->
     <div class="stats-row">
       <div class="stat-card">

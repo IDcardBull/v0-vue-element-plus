@@ -8,6 +8,13 @@
       <el-button :icon="Download">导出日志</el-button>
     </div>
 
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadLogs">点击重试</el-button>
+      </template>
+    </el-alert>
+
     <el-card class="filter-card" shadow="never">
       <el-form inline :model="filter" class="filter-form">
         <el-form-item label="操作人">
@@ -156,41 +163,30 @@ const pagination = reactive({
   total: 12,
 })
 
-const logList = ref<LogItem[]>([
-  { id: 1, time: '2026-04-21 09:12:33', name: '张建国', account: 'admin', module: '登录认证', action: 'login', desc: '用户登录成功', ip: '120.36.182.55', status: 'success', duration: 142 },
-  { id: 2, time: '2026-04-21 09:08:22', name: '李明', account: 'ops.lm', module: '商品管理', action: 'update', desc: '修改商品「青花瓷盖碗茶具（10头）」的批发阶梯价', ip: '120.36.182.63', status: 'success', duration: 356 },
-  { id: 3, time: '2026-04-21 08:55:17', name: '王芳', account: 'finance.wf', module: '订单管理', action: 'export', desc: '导出 2026-04 零售订单对账单', ip: '120.36.182.42', status: 'success', duration: 2850 },
-  { id: 4, time: '2026-04-21 08:40:02', name: '赵勤', account: 'wh.zq', module: '库存管理', action: 'create', desc: '创建入库单 IN-20260421-00015（采购入库 200 件）', ip: '120.36.182.88', status: 'success', duration: 198 },
-  { id: 5, time: '2026-04-20 18:22:48', name: '李明', account: 'ops.lm', module: '分销商管理', action: 'update', desc: '通过分销商审核：上海瓷行文化传播有限公司', ip: '120.36.182.63', status: 'success', duration: 224 },
-  { id: 6, time: '2026-04-20 17:15:06', name: '胡伟', account: 'sales.hu', module: '登录认证', action: 'login', desc: '登录失败：密码错误（连续 3 次）', ip: '183.22.45.108', status: 'fail', duration: 88 },
-  { id: 7, time: '2026-04-20 16:45:33', name: '刘静', account: 'cs.liu', module: '订单管理', action: 'update', desc: '关闭订单 SO-2026-04200-879（客户申请取消）', ip: '120.36.182.92', status: 'success', duration: 168 },
-  { id: 8, time: '2026-04-20 15:30:12', name: '张建国', account: 'admin', module: '系统管理', action: 'create', desc: '创建账号：sales.xy（销售角色）', ip: '120.36.182.55', status: 'success', duration: 265 },
-  { id: 9, time: '2026-04-20 14:20:55', name: '李明', account: 'ops.lm', module: '商品管理', action: 'create', desc: '新增商品：仿宋官窑茶叶罐（中号/开片釉）', ip: '120.36.182.63', status: 'success', duration: 425 },
-  { id: 10, time: '2026-04-20 11:08:45', name: '赵勤', account: 'wh.zq', module: '库存管理', action: 'delete', desc: '删除盘点记录 ADJ-20260418-00001', ip: '120.36.182.88', status: 'success', duration: 112 },
-  { id: 11, time: '2026-04-20 10:05:20', name: '王芳', account: 'finance.wf', module: '订单管理', action: 'update', desc: '审核通过退款：SO-2026-04180-336（¥1,280）', ip: '120.36.182.42', status: 'success', duration: 180 },
-  { id: 12, time: '2026-04-20 09:32:18', name: '未知', account: 'unknown', module: '登录认证', action: 'login', desc: '登录失败：账号不存在（尝试 admin2）', ip: '45.123.88.201', status: 'fail', duration: 62 },
-])
+const logList = ref<LogItem[]>([])
+const loadError = ref('')
 
 async function loadLogs() {
+  loadError.value = ''
   try {
     const res: any = await logApi.list({ page: 1, pageSize: 100 })
     const rows = (res?.list ?? []) as any[]
-    if (rows.length) {
-      logList.value = rows.map((r: any, i: number) => ({
-        id: r.id ?? i + 1,
-        time: r.createdAt || r.time || '',
-        name: r.operator?.realName || r.name || '',
-        account: r.operator?.username || r.account || '',
-        module: r.module || '',
-        action: r.action || 'update',
-        desc: r.description || r.desc || '',
-        ip: r.ip || '',
-        status: r.status || 'success',
-        duration: Number(r.duration ?? 0),
-      })) as any
-    }
-  } catch {
-    // 保留 mock
+    logList.value = rows.map((r: any, i: number) => ({
+      id: r.id ?? i + 1,
+      time: r.createdAt || r.time || '',
+      name: r.operator?.realName || r.name || '',
+      account: r.operator?.username || r.account || '',
+      module: r.module || '',
+      action: r.action || 'update',
+      desc: r.description || r.desc || '',
+      ip: r.ip || '',
+      status: r.status || 'success',
+      duration: Number(r.duration ?? 0),
+    })) as any
+    pagination.total = Number(res?.total ?? logList.value.length)
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    logList.value = []
   }
 }
 

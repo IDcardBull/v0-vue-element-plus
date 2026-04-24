@@ -46,7 +46,7 @@ class BatchIdsDto {
   ids: number[]
 }
 
-@Controller('admin/product')
+@Controller('admin/products')
 export class ProductController {
   constructor(private readonly svc: ProductService) {}
 
@@ -70,6 +70,40 @@ export class ProductController {
     return this.svc.update(id, dto)
   }
 
+  @Patch(':id')
+  patch(@Param('id', ParseIntPipe) id: number, @Body() dto: ProductDto) {
+    return this.svc.update(id, dto)
+  }
+
+  // 前端：PATCH /admin/products/:id/status  body: { status: 'on_sale' | 'off_sale' }
+  @Patch(':id/status')
+  setStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { status?: 'on_sale' | 'off_sale' | number },
+  ) {
+    if (body?.status !== undefined) {
+      const val =
+        typeof body.status === 'number'
+          ? body.status
+          : body.status === 'on_sale'
+            ? 1
+            : 0
+      return this.svc.setStatus(id, val)
+    }
+    return this.svc.toggleListing(id)
+  }
+
+  // 前端：PATCH /admin/products/:id/channel  body: { channel: 'retail' | 'wholesale', enabled: boolean }
+  @Patch(':id/channel')
+  setChannel(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { channel: 'retail' | 'wholesale'; enabled: boolean },
+  ) {
+    if (body.channel === 'retail') return this.svc.setRetail(id, !!body.enabled)
+    return this.svc.setWholesale(id, !!body.enabled)
+  }
+
+  // 保留原有的切换接口，便于以后直接调用
   @Patch(':id/toggle-listing')
   toggleListing(@Param('id', ParseIntPipe) id: number) {
     return this.svc.toggleListing(id)

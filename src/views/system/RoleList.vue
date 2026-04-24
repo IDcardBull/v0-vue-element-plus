@@ -8,6 +8,13 @@
       <el-button type="primary" :icon="Plus" @click="handleCreate">新增角色</el-button>
     </div>
 
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadRoles">点击重试</el-button>
+      </template>
+    </el-alert>
+
     <div class="main-layout">
       <!-- 左侧角色列表 -->
       <el-card class="role-list-card" shadow="never">
@@ -139,37 +146,31 @@ interface Role {
   desc: string
 }
 
-const roleList = ref<Role[]>([
-  { id: 1, code: 'super', name: '超级管理员', accounts: 2, desc: '拥有系统所有权限' },
-  { id: 2, code: 'admin', name: '运营管理员', accounts: 5, desc: '运营与内容管理' },
-  { id: 3, code: 'finance', name: '财务', accounts: 3, desc: '账务、对账、退款审核' },
-  { id: 4, code: 'warehouse', name: '仓管', accounts: 4, desc: '出入库与库存调整' },
-  { id: 5, code: 'cs', name: '客服', accounts: 8, desc: '售前咨询与售后工单' },
-  { id: 6, code: 'sales', name: '销售', accounts: 12, desc: '分销商维护与批发订单' },
-])
+const roleList = ref<Role[]>([])
+const currentRole = ref<Role | null>(null)
+const loadError = ref('')
 
 async function loadRoles() {
+  loadError.value = ''
   try {
     const res: any = await roleApi.list()
     const rows = (res?.list ?? res ?? []) as any[]
-    if (Array.isArray(rows) && rows.length) {
-      roleList.value = rows.map((r: any, i: number) => ({
-        id: r.id ?? i + 1,
-        code: r.code || '',
-        name: r.name || '',
-        accounts: Number(r.accountCount ?? r.accounts ?? 0),
-        desc: r.description || r.desc || '',
-      })) as any
-      currentRole.value = roleList.value[0]
-    }
-  } catch {
-    // 保留 mock
+    roleList.value = (Array.isArray(rows) ? rows : []).map((r: any, i: number) => ({
+      id: r.id ?? i + 1,
+      code: r.code || '',
+      name: r.name || '',
+      accounts: Number(r.accountCount ?? r.accounts ?? 0),
+      desc: r.description || r.desc || '',
+    })) as any
+    currentRole.value = roleList.value[0] ?? null
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    roleList.value = []
+    currentRole.value = null
   }
 }
 
 onMounted(loadRoles)
-
-const currentRole = ref<Role | null>(roleList.value[1])
 
 const activeTab = ref('menu')
 

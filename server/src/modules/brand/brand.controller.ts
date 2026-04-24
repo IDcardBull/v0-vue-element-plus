@@ -24,7 +24,7 @@ class BrandQueryDto extends PaginationDto {
   @IsOptional() status?: number
 }
 
-@Controller('admin/brand')
+@Controller('admin/brands')
 export class BrandController {
   constructor(private readonly svc: BrandService) {}
 
@@ -49,14 +49,30 @@ export class BrandController {
     return this.svc.create(dto)
   }
 
+  // 前端既可能用 PUT 全量更新，也可能用 PATCH 部分更新，两者都支持
   @Put(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: BrandDto) {
     return this.svc.update(id, dto)
   }
 
-  @Patch(':id/toggle')
-  toggle(@Param('id', ParseIntPipe) id: number) {
-    return this.svc.toggleStatus(id)
+  @Patch(':id')
+  patch(@Param('id', ParseIntPipe) id: number, @Body() dto: BrandDto) {
+    return this.svc.update(id, dto)
+  }
+
+  // 前端调用 PATCH /admin/brands/:id/status { status: 'active' | 'disabled' }
+  @Patch(':id/status')
+  toggle(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { status?: 'active' | 'disabled' | number },
+  ) {
+    // 兼容字符串/数字两种写法：'active' -> 1, 'disabled' -> 0
+    let next: number | undefined
+    if (body?.status !== undefined) {
+      if (typeof body.status === 'number') next = body.status
+      else next = body.status === 'active' ? 1 : 0
+    }
+    return this.svc.toggleStatus(id, next)
   }
 
   @Delete(':id')

@@ -78,11 +78,24 @@ let BrandController = class BrandController {
     create(dto) {
         return this.svc.create(dto);
     }
+    // 前端既可能用 PUT 全量更新，也可能用 PATCH 部分更新，两者都支持
     update(id, dto) {
         return this.svc.update(id, dto);
     }
-    toggle(id) {
-        return this.svc.toggleStatus(id);
+    patch(id, dto) {
+        return this.svc.update(id, dto);
+    }
+    // 前端调用 PATCH /admin/brands/:id/status { status: 'active' | 'disabled' }
+    toggle(id, body) {
+        // 兼容字符串/数字两种写法：'active' -> 1, 'disabled' -> 0
+        let next;
+        if (body?.status !== undefined) {
+            if (typeof body.status === 'number')
+                next = body.status;
+            else
+                next = body.status === 'active' ? 1 : 0;
+        }
+        return this.svc.toggleStatus(id, next);
     }
     remove(id) {
         return this.svc.remove(id);
@@ -126,10 +139,19 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], BrandController.prototype, "update", null);
 __decorate([
-    (0, common_1.Patch)(':id/toggle'),
+    (0, common_1.Patch)(':id'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number]),
+    __metadata("design:paramtypes", [Number, BrandDto]),
+    __metadata("design:returntype", void 0)
+], BrandController.prototype, "patch", null);
+__decorate([
+    (0, common_1.Patch)(':id/status'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
     __metadata("design:returntype", void 0)
 ], BrandController.prototype, "toggle", null);
 __decorate([
@@ -140,7 +162,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], BrandController.prototype, "remove", null);
 exports.BrandController = BrandController = __decorate([
-    (0, common_1.Controller)('admin/brand'),
+    (0, common_1.Controller)('admin/brands'),
     __metadata("design:paramtypes", [brand_service_1.BrandService])
 ], BrandController);
 //# sourceMappingURL=brand.controller.js.map

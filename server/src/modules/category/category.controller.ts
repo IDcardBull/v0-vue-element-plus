@@ -20,7 +20,7 @@ class CategoryDto {
   @IsOptional() status?: number
 }
 
-@Controller('admin/category')
+@Controller('admin/categories')
 export class CategoryController {
   constructor(private readonly svc: CategoryService) {}
 
@@ -48,6 +48,11 @@ export class CategoryController {
 
   @Put(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: CategoryDto) {
+    return this.svc.update(id, dto)
+  }
+
+  @Patch(':id')
+  patch(@Param('id', ParseIntPipe) id: number, @Body() dto: CategoryDto) {
     return this.svc.update(id, dto)
   }
 

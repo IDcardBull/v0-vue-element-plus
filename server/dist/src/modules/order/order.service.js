@@ -329,6 +329,18 @@ let OrderService = class OrderService {
             });
         });
     }
+    /** 退款：置为售后状态，并把金额/原因写入备注 */
+    async refund(orderId, amount, reason) {
+        const order = await this.findById(orderId);
+        if (!['pending_ship', 'shipped', 'completed'].includes(order.status))
+            throw new common_1.BadRequestException('订单当前状态无法发起退款');
+        const refundAmt = amount !== undefined ? amount : Number(order.paidAmount ?? 0);
+        const remark = [`[退款 ¥${refundAmt}]`, reason, order.remark].filter(Boolean).join(' / ');
+        return this.prisma.order.update({
+            where: { id: BigInt(orderId) },
+            data: { status: 'after_sale', remark },
+        });
+    }
 };
 exports.OrderService = OrderService;
 exports.OrderService = OrderService = __decorate([
