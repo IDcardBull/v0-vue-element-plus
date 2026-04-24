@@ -201,26 +201,33 @@ async function loadList() {
     const res: any = await productApi.list({ page: 1, pageSize: 100, channel: 'wholesale' })
     const rows = (res?.list ?? []) as any[]
     if (rows.length) {
-      products.value = rows.map((r) => {
+      products.value = rows.map((r: any) => {
         const sku = r.skus?.[0] || {}
+        const tiers = (sku.priceTiers || r.priceTiers || []).map((t: any) => ({
+          min_qty: t.minQty ?? t.min_qty ?? null,
+          max_qty: t.maxQty ?? t.max_qty ?? null,
+          price: Number(t.price ?? 0),
+        }))
         return {
           id: String(r.id),
           code: r.code || sku.code || '',
           name: r.name,
           image: r.mainImage || r.coverImage || '/placeholder.svg',
-          category: r.category?.name || '茶器',
-          craft: r.craft || '青花瓷',
+          category: (r.category?.name as ProductCategory) || '茶器',
+          craft: (r.craft as ProductCraft) || '青花瓷',
           retail_price_ref: Number(sku.retailPrice ?? r.retailPrice ?? 0),
-          min_order_qty: Number(sku.minOrderQty ?? r.minOrderQty ?? 1),
-          tier_count: r.priceTierCount ?? (sku.priceTiers?.length || 0),
-          tier_min_price: Number(r.tierMinPrice ?? sku.priceTiers?.[sku.priceTiers.length - 1]?.price ?? 0),
-          tier_max_price: Number(r.tierMaxPrice ?? sku.priceTiers?.[0]?.price ?? 0),
           wholesale_enabled: r.wholesaleEnabled !== false,
-          auth_levels: r.authLevels || ['普通', '白银'],
-          distributors: r.distributorCount ?? 0,
-          monthly_sales: r.monthlySales ?? 0,
-          monthly_amount: r.monthlyAmount ?? 0,
-        } as WholesaleProduct
+          min_wholesale_qty: Number(sku.minOrderQty ?? r.minWholesaleQty ?? 1),
+          tier_count: tiers.length || Number(r.priceTierCount ?? 0),
+          tier_min_price: Number(r.tierMinPrice ?? tiers[tiers.length - 1]?.price ?? 0),
+          tier_max_price: Number(r.tierMaxPrice ?? tiers[0]?.price ?? 0),
+          authorized_levels: (r.authorizedLevels || r.authLevels || ['普通', '白银']) as DealerLevel[],
+          dealer_count: Number(r.dealerCount ?? r.distributorCount ?? 0),
+          wholesale_sales_30d: Number(r.wholesaleSales30d ?? r.monthlyAmount ?? 0),
+          stock_available: Number(sku.stock ?? sku.stockAvailable ?? 0),
+          stock_warning: Number(sku.stockWarning ?? 20),
+          tiers,
+        }
       })
     }
   } catch {
@@ -597,7 +604,7 @@ function levelTagType(l: DealerLevel) {
               active-text="开启"
               inactive-text="关闭"
               style="--el-switch-on-color: #67c23a; --el-switch-off-color: #909399"
-              @update:model-value="(v) => toggleWholesale(row, v)"
+              @update:model-value="(v: string | number | boolean) => toggleWholesale(row, Boolean(v))"
             />
           </template>
         </el-table-column>

@@ -11,3 +11,9 @@ export function fetchCustomer(id: number) {
 export function updateCustomer(id: number, data: any) {
   return request.patch<any, any>(`/admin/customers/${id}`, data)
 }
+
+export const customerApi = {
+  list: fetchCustomers,
+  get: fetchCustomer,
+  update: updateCustomer,
+}

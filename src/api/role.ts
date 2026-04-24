@@ -23,3 +23,12 @@ export function deleteRole(id: number) {
 export function updateRolePermissions(id: number, permissions: string[]) {
   return request.patch<any, any>(`/admin/roles/${id}/permissions`, { permissions })
 }
+
+export const roleApi = {
+  list: fetchRoles,
+  get: fetchRole,
+  create: createRole,
+  update: updateRole,
+  remove: deleteRole,
+  updatePermissions: updateRolePermissions,
+}

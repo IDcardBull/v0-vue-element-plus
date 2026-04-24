@@ -36,3 +36,12 @@ export function closeOrder(id: number, reason?: string) {
 export function refundOrder(id: number, amount?: number, reason?: string) {
   return request.post<any, any>(`/admin/orders/${id}/refund`, { amount, reason })
 }
+
+export const orderApi = {
+  list: fetchOrders,
+  get: fetchOrder,
+  ship: shipOrder,
+  complete: completeOrder,
+  close: closeOrder,
+  refund: refundOrder,
+}

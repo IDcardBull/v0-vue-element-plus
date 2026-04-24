@@ -23,3 +23,12 @@ export function createStockOut(data: any) {
 export function createStockAdjust(data: any) {
   return request.post<any, any>('/admin/inventory/adjust', data)
 }
+
+export const inventoryApi = {
+  stockList: fetchStockList,
+  warnings: fetchStockWarning,
+  records: fetchStockRecords,
+  stockIn: createStockIn,
+  stockOut: createStockOut,
+  adjust: createStockAdjust,
+}

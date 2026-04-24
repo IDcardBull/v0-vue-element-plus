@@ -15,3 +15,10 @@ export function updateDistributor(id: number, data: any) {
 export function auditDistributor(id: number, pass: boolean, remark?: string) {
   return request.post<any, any>(`/admin/distributors/${id}/audit`, { pass, remark })
 }
+
+export const distributorApi = {
+  list: fetchDistributors,
+  get: fetchDistributor,
+  update: updateDistributor,
+  audit: auditDistributor,
+}

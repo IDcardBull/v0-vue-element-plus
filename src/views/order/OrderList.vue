@@ -548,11 +548,11 @@ function exportData() {
               size="small"
               effect="plain"
               :style="{
-                color: channelMeta[row.channel].color,
-                borderColor: channelMeta[row.channel].color,
+                color: channelMeta[row.channel as OrderChannel]?.color,
+                borderColor: channelMeta[row.channel as OrderChannel]?.color,
               }"
             >
-              {{ channelMeta[row.channel].label }}
+              {{ channelMeta[row.channel as OrderChannel]?.label || row.channel }}
             </el-tag>
           </template>
         </el-table-column>
