@@ -126,10 +126,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, RefreshLeft } from '@element-plus/icons-vue'
+import { accountApi } from '@/api/account'
 
 interface Account {
   id: number
@@ -257,6 +258,32 @@ const accountList = ref<Account[]>([
     createdAt: '2024-08-30',
   },
 ])
+
+async function loadAccounts() {
+  try {
+    const res: any = await accountApi.list({ page: 1, pageSize: 100 })
+    const rows = (res?.list ?? []) as any[]
+    if (rows.length) {
+      accountList.value = rows.map((r: any, i: number) => ({
+        id: r.id ?? i + 1,
+        username: r.username || '',
+        realName: r.realName || '',
+        phone: r.phone || '',
+        email: r.email || '',
+        department: r.department || '',
+        roleName: r.role?.name || r.roleName || '',
+        lastLogin: r.lastLoginAt || r.lastLogin || '',
+        lastIp: r.lastLoginIp || r.lastIp || '',
+        status: r.status || 'active',
+        createdAt: r.createdAt || '',
+      })) as any
+    }
+  } catch {
+    // 保留 mock
+  }
+}
+
+onMounted(loadAccounts)
 
 function statusType(s: string): 'success' | 'info' | 'danger' {
   return s === 'active' ? 'success' : s === 'locked' ? 'danger' : 'info'

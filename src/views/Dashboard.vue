@@ -33,7 +33,22 @@ async function loadData() {
       { label: '库存预警 SKU', value: overview.lowStockCount ?? 0, tone: 'warning', icon: 'Warning' },
       { label: '待发货订单', value: overview.pendingShipCount ?? 0, tone: 'danger', icon: 'Box' },
     ]
-    topProducts.value = top
+    topProducts.value = Array.isArray(top) ? top : []
+  } catch {
+    // 后端未就绪时使用示例数据兜底
+    stats.value = [
+      { label: '今日订单数', value: 128, tone: 'primary', icon: 'ShoppingCart' },
+      { label: '今日支付金额', value: formatMoney(38420), tone: 'success', icon: 'Money' },
+      { label: '库存预警 SKU', value: 6, tone: 'warning', icon: 'Warning' },
+      { label: '待发货订单', value: 23, tone: 'danger', icon: 'Box' },
+    ]
+    topProducts.value = [
+      { name: '青花瓷茶具套装（六件套/青花缠枝纹）', quantity: 86, amount: 51600 },
+      { name: '羊脂玉花瓶（中号/素面）', quantity: 42, amount: 62000 },
+      { name: '汝窑主人杯（天青釉/150ml）', quantity: 38, amount: 9600 },
+      { name: '仿宋官窑茶叶罐（中号/开片釉）', quantity: 27, amount: 10260 },
+      { name: '德化白瓷盖碗（110ml）', quantity: 21, amount: 4180 },
+    ]
   } finally {
     loading.value = false
   }

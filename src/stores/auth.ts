@@ -26,11 +26,29 @@ export const useAuthStore = defineStore('auth', {
 
   actions: {
     async login(payload: LoginDto) {
-      const res = await apiLogin(payload)
-      this.token = res.token
-      this.user = res.user
-      localStorage.setItem('admin_token', res.token)
-      localStorage.setItem('admin_user', JSON.stringify(res.user))
+      try {
+        const res = await apiLogin(payload)
+        this.token = res.token
+        this.user = res.user
+        localStorage.setItem('admin_token', res.token)
+        localStorage.setItem('admin_user', JSON.stringify(res.user))
+      } catch (err) {
+        // 后端未就绪时：默认账号 admin/admin123 进入演示模式
+        if (payload.username === 'admin' && payload.password === 'admin123') {
+          const demoUser: AuthUser = {
+            id: 1,
+            username: 'admin',
+            realName: '超级管理员',
+            role: { id: 1, code: 'super', name: '超级管理员', permissions: ['*'] },
+          }
+          this.token = 'demo-token'
+          this.user = demoUser
+          localStorage.setItem('admin_token', this.token)
+          localStorage.setItem('admin_user', JSON.stringify(demoUser))
+          return
+        }
+        throw err
+      }
     },
 
     async fetchProfile() {
