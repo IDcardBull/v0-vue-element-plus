@@ -55,130 +55,6 @@ interface SkuInfo {
   retail_price: number
 }
 
-/* ===================== 模拟数据 ===================== */
-
-const mockProducts: WholesaleProduct[] = [
-  {
-    id: '1',
-    code: 'YM-CHA-0001',
-    name: '青花瓷手绘八宝纹茶具套装（一壶四杯）',
-    image:
-      'https://images.unsplash.com/photo-1563822249366-3efb23b8e0c9?w=200&q=80&auto=format&fit=crop',
-    category: '茶器',
-    craft: '青花瓷',
-    retail_price_ref: 688,
-    wholesale_enabled: true,
-    min_wholesale_qty: 10,
-    tier_count: 3,
-    tier_min_price: 380,
-    tier_max_price: 520,
-    authorized_levels: ['普通', '白银', '黄金', '钻石'],
-    dealer_count: 48,
-    wholesale_sales_30d: 286400,
-    stock_available: 156,
-    stock_warning: 30,
-    tiers: [
-      { min_qty: 10, max_qty: 49, price: 520 },
-      { min_qty: 50, max_qty: 199, price: 450 },
-      { min_qty: 200, max_qty: null, price: 380 },
-    ],
-  },
-  {
-    id: '2',
-    code: 'YM-HUA-0012',
-    name: '羊脂玉白瓷·梅兰竹菊浮雕花瓶',
-    image:
-      'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?w=200&q=80&auto=format&fit=crop',
-    category: '花器',
-    craft: '羊脂玉白瓷',
-    retail_price_ref: 1280,
-    wholesale_enabled: true,
-    min_wholesale_qty: 5,
-    tier_count: 2,
-    tier_min_price: 780,
-    tier_max_price: 920,
-    authorized_levels: ['黄金', '钻石'],
-    dealer_count: 12,
-    wholesale_sales_30d: 156800,
-    stock_available: 12,
-    stock_warning: 20,
-    tiers: [
-      { min_qty: 5, max_qty: 29, price: 920 },
-      { min_qty: 30, max_qty: null, price: 780 },
-    ],
-  },
-  {
-    id: '3',
-    code: 'YM-CHA-0027',
-    name: '汝窑天青釉·开片主人杯（单只礼盒装）',
-    image:
-      'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=200&q=80&auto=format&fit=crop',
-    category: '茶器',
-    craft: '汝窑天青釉',
-    retail_price_ref: 398,
-    wholesale_enabled: false,
-    min_wholesale_qty: 0,
-    tier_count: 0,
-    tier_min_price: 0,
-    tier_max_price: 0,
-    authorized_levels: [],
-    dealer_count: 0,
-    wholesale_sales_30d: 0,
-    stock_available: 248,
-    stock_warning: 50,
-    tiers: [],
-  },
-  {
-    id: '4',
-    code: 'YM-CAN-0008',
-    name: '粉彩描金·福寿双全祝寿餐具 28 件套',
-    image:
-      'https://images.unsplash.com/photo-1578321272176-b7bbc0679853?w=200&q=80&auto=format&fit=crop',
-    category: '餐具',
-    craft: '粉彩',
-    retail_price_ref: 2680,
-    wholesale_enabled: true,
-    min_wholesale_qty: 2,
-    tier_count: 3,
-    tier_min_price: 1580,
-    tier_max_price: 2080,
-    authorized_levels: ['白银', '黄金', '钻石'],
-    dealer_count: 36,
-    wholesale_sales_30d: 428600,
-    stock_available: 46,
-    stock_warning: 15,
-    tiers: [
-      { min_qty: 2, max_qty: 9, price: 2080 },
-      { min_qty: 10, max_qty: 49, price: 1880 },
-      { min_qty: 50, max_qty: null, price: 1580 },
-    ],
-  },
-  {
-    id: '5',
-    code: 'YM-JIU-0003',
-    name: '手绘青釉·山水纹品酒对杯',
-    image:
-      'https://images.unsplash.com/photo-1536520002442-39764a41e987?w=200&q=80&auto=format&fit=crop',
-    category: '酒器',
-    craft: '手绘青釉',
-    retail_price_ref: 268,
-    wholesale_enabled: true,
-    min_wholesale_qty: 20,
-    tier_count: 2,
-    tier_min_price: 128,
-    tier_max_price: 168,
-    authorized_levels: ['普通', '白银', '黄金', '钻石'],
-    dealer_count: 62,
-    wholesale_sales_30d: 98600,
-    stock_available: 8,
-    stock_warning: 20,
-    tiers: [
-      { min_qty: 20, max_qty: 99, price: 168 },
-      { min_qty: 100, max_qty: null, price: 128 },
-    ],
-  },
-]
-
 /* ===================== 筛选 ===================== */
 
 const filter = reactive({
@@ -193,45 +69,46 @@ const categoryOptions: ProductCategory[] = ['茶器', '花器', '餐具', '酒�
 const levelOptions: DealerLevel[] = ['普通', '白银', '黄金', '钻石']
 
 const page = reactive({ current: 1, size: 10 })
-const products = ref<WholesaleProduct[]>([...mockProducts])
+const products = ref<WholesaleProduct[]>([])
+const loadError = ref('')
 
 async function loadList() {
   loading.value = true
+  loadError.value = ''
   try {
     const res: any = await productApi.list({ page: 1, pageSize: 100, channel: 'wholesale' })
     const rows = (res?.list ?? []) as any[]
-    if (rows.length) {
-      products.value = rows.map((r: any) => {
-        const sku = r.skus?.[0] || {}
-        const tiers = (sku.priceTiers || r.priceTiers || []).map((t: any) => ({
-          min_qty: t.minQty ?? t.min_qty ?? null,
-          max_qty: t.maxQty ?? t.max_qty ?? null,
-          price: Number(t.price ?? 0),
-        }))
-        return {
-          id: String(r.id),
-          code: r.code || sku.code || '',
-          name: r.name,
-          image: r.mainImage || r.coverImage || '/placeholder.svg',
-          category: (r.category?.name as ProductCategory) || '茶器',
-          craft: (r.craft as ProductCraft) || '青花瓷',
-          retail_price_ref: Number(sku.retailPrice ?? r.retailPrice ?? 0),
-          wholesale_enabled: r.wholesaleEnabled !== false,
-          min_wholesale_qty: Number(sku.minOrderQty ?? r.minWholesaleQty ?? 1),
-          tier_count: tiers.length || Number(r.priceTierCount ?? 0),
-          tier_min_price: Number(r.tierMinPrice ?? tiers[tiers.length - 1]?.price ?? 0),
-          tier_max_price: Number(r.tierMaxPrice ?? tiers[0]?.price ?? 0),
-          authorized_levels: (r.authorizedLevels || r.authLevels || ['普通', '白银']) as DealerLevel[],
-          dealer_count: Number(r.dealerCount ?? r.distributorCount ?? 0),
-          wholesale_sales_30d: Number(r.wholesaleSales30d ?? r.monthlyAmount ?? 0),
-          stock_available: Number(sku.stock ?? sku.stockAvailable ?? 0),
-          stock_warning: Number(sku.stockWarning ?? 20),
-          tiers,
-        }
-      })
-    }
-  } catch {
-    // 保留 mock
+    products.value = rows.map((r: any) => {
+      const sku = r.skus?.[0] || {}
+      const tiers = (sku.priceTiers || r.priceTiers || []).map((t: any) => ({
+        min_qty: t.minQty ?? t.min_qty ?? null,
+        max_qty: t.maxQty ?? t.max_qty ?? null,
+        price: Number(t.price ?? 0),
+      }))
+      return {
+        id: String(r.id),
+        code: r.code || sku.code || '',
+        name: r.name,
+        image: r.mainImage || r.coverImage || '/placeholder.svg',
+        category: (r.category?.name as ProductCategory) || '茶器',
+        craft: (r.craft as ProductCraft) || '青花瓷',
+        retail_price_ref: Number(sku.retailPrice ?? r.retailPrice ?? 0),
+        wholesale_enabled: r.wholesaleEnabled !== false,
+        min_wholesale_qty: Number(sku.minOrderQty ?? r.minWholesaleQty ?? 1),
+        tier_count: tiers.length || Number(r.priceTierCount ?? 0),
+        tier_min_price: Number(r.tierMinPrice ?? tiers[tiers.length - 1]?.price ?? 0),
+        tier_max_price: Number(r.tierMaxPrice ?? tiers[0]?.price ?? 0),
+        authorized_levels: (r.authorizedLevels || r.authLevels || []) as DealerLevel[],
+        dealer_count: Number(r.dealerCount ?? r.distributorCount ?? 0),
+        wholesale_sales_30d: Number(r.wholesaleSales30d ?? r.monthlyAmount ?? 0),
+        stock_available: Number(sku.stock ?? sku.stockAvailable ?? 0),
+        stock_warning: Number(sku.stockWarning ?? 20),
+        tiers,
+      }
+    })
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    products.value = []
   } finally {
     loading.value = false
   }
@@ -386,6 +263,12 @@ function levelTagType(l: DealerLevel) {
 
 <template>
   <div class="wholesale-product">
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadList">点击重试</el-button>
+      </template>
+    </el-alert>
     <!-- 顶部统计 -->
     <div class="stat-row">
       <el-card shadow="never" class="stat-card">
@@ -496,7 +379,7 @@ function levelTagType(l: DealerLevel) {
           </template>
         </el-table-column>
 
-        <el-table-column label="商品编码 / 名称" min-width="220">
+        <el-table-column label="商品编�� / 名称" min-width="220">
           <template #default="{ row }">
             <div class="cell-code">{{ row.code }}</div>
             <div class="cell-name">{{ row.name }}</div>
