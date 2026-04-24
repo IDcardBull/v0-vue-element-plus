@@ -8,6 +8,8 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ClientAuthModule = void 0;
 const common_1 = require("@nestjs/common");
+const jwt_1 = require("@nestjs/jwt");
+const config_1 = require("@nestjs/config");
 const client_auth_controller_1 = require("./client-auth.controller");
 const client_auth_service_1 = require("./client-auth.service");
 let ClientAuthModule = class ClientAuthModule {
@@ -15,6 +17,16 @@ let ClientAuthModule = class ClientAuthModule {
 exports.ClientAuthModule = ClientAuthModule;
 exports.ClientAuthModule = ClientAuthModule = __decorate([
     (0, common_1.Module)({
+        imports: [
+            // 注入 JwtService（与管理端 AuthModule 共用同一 JWT_SECRET，保证三端 token 互通）
+            jwt_1.JwtModule.registerAsync({
+                inject: [config_1.ConfigService],
+                useFactory: (config) => ({
+                    secret: config.get('JWT_SECRET'),
+                    signOptions: { expiresIn: config.get('JWT_EXPIRES_IN') || '7d' },
+                }),
+            }),
+        ],
         controllers: [client_auth_controller_1.ClientAuthController],
         providers: [client_auth_service_1.ClientAuthService],
         exports: [client_auth_service_1.ClientAuthService],
