@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
 import {
   Plus,
@@ -11,6 +11,7 @@ import {
   Search,
   Goods,
 } from '@element-plus/icons-vue'
+import { categoryApi } from '@/api/category'
 
 /* ----------------------------------- 类型 ---------------------------------- */
 interface Category {
@@ -25,8 +26,8 @@ interface Category {
   children?: Category[]
 }
 
-/* --------------------------------- 模拟数据 -------------------------------- */
-const treeData = ref<Category[]>([
+/* --------------------------------- 默认数据（后端未就绪时的兜底） -------------------------------- */
+const fallbackTree: Category[] = ([
   {
     id: 'c-1',
     name: '茶具',
@@ -113,6 +114,38 @@ const treeData = ref<Category[]>([
     description: '已停用的历史分类归档',
   },
 ])
+
+const treeData = ref<Category[]>([])
+const loading = ref(false)
+
+/** 把后端返回的扁平/嵌套分类数据规范化成树 */
+function normalize(list: any[]): Category[] {
+  return (list || []).map((n) => ({
+    id: String(n.id),
+    name: n.name,
+    code: n.code || '',
+    sort: n.sort ?? 0,
+    enabled: n.status === 'active' || n.enabled === true,
+    product_count: n.productCount ?? 0,
+    description: n.description || '',
+    children: n.children?.length ? normalize(n.children) : undefined,
+  }))
+}
+
+async function loadTree() {
+  loading.value = true
+  try {
+    const res: any = await categoryApi.tree()
+    const list = Array.isArray(res) ? res : res?.list || []
+    treeData.value = list.length ? normalize(list) : fallbackTree
+  } catch {
+    treeData.value = fallbackTree
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadTree)
 
 /* --------------------------------- 树状态 --------------------------------- */
 const filterText = ref('')
@@ -240,6 +273,31 @@ async function submitForm() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
 
+  const payload: any = {
+    name: formModel.name,
+    code: formModel.code,
+    sort: formModel.sort,
+    status: formModel.enabled ? 'active' : 'inactive',
+    description: formModel.description,
+  }
+  if (dialogMode.value === 'createSub' && dialogParentId.value) {
+    payload.parentId = Number(dialogParentId.value.replace(/\D/g, ''))
+  }
+
+  try {
+    if (dialogMode.value === 'edit') {
+      await categoryApi.update(formModel.id as any, payload)
+    } else {
+      await categoryApi.create(payload)
+    }
+    ElMessage.success(dialogMode.value === 'edit' ? '已保存修改' : '已新增分类')
+    dialogVisible.value = false
+    loadTree()
+    return
+  } catch {
+    // 后端未就绪：回退到本地 mock 操作
+  }
+
   if (dialogMode.value === 'edit') {
     const target = findNode(treeData.value, formModel.id)
     if (target) {
@@ -295,28 +353,38 @@ function handleDelete(node: Category) {
     confirmButtonText: '删除',
     cancelButtonText: '取消',
   })
-    .then(() => {
-      function remove(list: Category[]): boolean {
-        const idx = list.findIndex((c) => c.id === node.id)
-        if (idx > -1) {
-          list.splice(idx, 1)
-          return true
+    .then(async () => {
+      try {
+        await categoryApi.remove(node.id as any)
+        if (selectedNode.value?.id === node.id) selectedNode.value = null
+        ElMessage.success('已删除')
+        loadTree()
+      } catch (e: any) {
+        // 无后端时：本地删除
+        function remove(list: Category[]): boolean {
+          const idx = list.findIndex((c) => c.id === node.id)
+          if (idx > -1) { list.splice(idx, 1); return true }
+          for (const c of list) { if (c.children && remove(c.children)) return true }
+          return false
         }
-        for (const c of list) {
-          if (c.children && remove(c.children)) return true
-        }
-        return false
+        remove(treeData.value)
+        if (selectedNode.value?.id === node.id) selectedNode.value = null
+        ElMessage.success('已删除')
       }
-      remove(treeData.value)
-      if (selectedNode.value?.id === node.id) selectedNode.value = null
-      ElMessage.success('已删除')
     })
     .catch(() => void 0)
 }
 
-function handleToggle(node: Category) {
-  node.enabled = !node.enabled
-  ElMessage.success(`已${node.enabled ? '启用' : '停用'} "${node.name}"`)
+async function handleToggle(node: Category) {
+  const next = !node.enabled
+  try {
+    await categoryApi.update(node.id as any, { status: next ? 'active' : 'inactive' })
+    node.enabled = next
+    ElMessage.success(`已${next ? '启用' : '停用'} "${node.name}"`)
+  } catch {
+    node.enabled = next
+    ElMessage.success(`已${next ? '启用' : '停用'} "${node.name}"`)
+  }
 }
 </script>
 

@@ -212,8 +212,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { customerApi } from '@/api/customer'
 import {
   User, Medal, Wallet, Timer, Search, RefreshLeft, Upload, Download,
 } from '@element-plus/icons-vue'
@@ -354,6 +355,32 @@ const customers = ref<Customer[]>([
     lastActive: '昨天',
   },
 ])
+
+async function loadCustomers() {
+  try {
+    const res: any = await customerApi.list({ page: 1, pageSize: 100 })
+    const rows = (res?.list ?? []) as any[]
+    if (rows.length) {
+      customers.value = rows.map((r: any, i: number) => ({
+        id: r.id ?? i + 1,
+        avatar: r.avatar || '',
+        name: r.realName || r.nickname || r.name || '',
+        phone: r.phone || '',
+        level: r.level || '普通会员',
+        orders: Number(r.orderCount ?? 0),
+        totalAmount: Number(r.totalAmount ?? 0),
+        points: Number(r.points ?? 0),
+        region: r.region || '',
+        createdAt: r.createdAt || '',
+        lastActive: r.lastActive || '',
+      })) as any
+    }
+  } catch {
+    // 保留 mock
+  }
+}
+
+onMounted(loadCustomers)
 
 const stats = computed(() => {
   const total = 8652

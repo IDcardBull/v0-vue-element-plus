@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { productApi } from '@/api/product'
 
 const router = useRouter()
+const loading = ref(false)
 
 /* ===================== 类型定义 ===================== */
 
@@ -143,6 +145,42 @@ const campaignOptions: RetailProduct['campaign'][] = [
 
 const page = reactive({ current: 1, size: 10 })
 const products = ref<RetailProduct[]>([...mockProducts])
+
+/** 后端商品映射为前端零售商品结构 */
+function mapFromApi(row: any): RetailProduct {
+  const firstSku = row.skus?.[0]
+  return {
+    id: String(row.id),
+    code: row.code || firstSku?.code || '',
+    name: row.name,
+    image: row.mainImage || row.coverImage || row.image || '/placeholder.svg',
+    category: row.category?.name || row.categoryName || '茶器',
+    craft: row.craft || '青花瓷',
+    retail_price: Number(firstSku?.retailPrice ?? row.retailPrice ?? 0),
+    member_price: Number(firstSku?.memberPrice ?? row.memberPrice ?? 0),
+    retail_on_sale: row.status === 'on_sale' || row.retailEnabled === true,
+    sales_30d: row.sales30d ?? 0,
+    rating: row.rating ?? 5,
+    stock_available: Number(firstSku?.stock ?? 0),
+    stock_warning: Number(firstSku?.stockWarning ?? 20),
+    campaign: row.campaign || '',
+  }
+}
+
+async function loadList() {
+  loading.value = true
+  try {
+    const res: any = await productApi.list({ page: page.current, pageSize: 100, channel: 'retail' })
+    const rows = (res?.list ?? []) as any[]
+    if (rows.length) products.value = rows.map(mapFromApi)
+  } catch {
+    // 后端未就绪时保留 mock
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadList)
 
 const filteredList = computed(() => {
   return products.value.filter((p) => {

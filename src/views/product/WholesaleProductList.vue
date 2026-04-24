@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PriceTierConfig from './PriceTierConfig.vue'
+import { productApi } from '@/api/product'
 
 const router = useRouter()
+const loading = ref(false)
 
 /* ===================== 类型定义 ===================== */
 
@@ -192,6 +194,43 @@ const levelOptions: DealerLevel[] = ['普通', '白银', '黄金', '钻石']
 
 const page = reactive({ current: 1, size: 10 })
 const products = ref<WholesaleProduct[]>([...mockProducts])
+
+async function loadList() {
+  loading.value = true
+  try {
+    const res: any = await productApi.list({ page: 1, pageSize: 100, channel: 'wholesale' })
+    const rows = (res?.list ?? []) as any[]
+    if (rows.length) {
+      products.value = rows.map((r) => {
+        const sku = r.skus?.[0] || {}
+        return {
+          id: String(r.id),
+          code: r.code || sku.code || '',
+          name: r.name,
+          image: r.mainImage || r.coverImage || '/placeholder.svg',
+          category: r.category?.name || '茶器',
+          craft: r.craft || '青花瓷',
+          retail_price_ref: Number(sku.retailPrice ?? r.retailPrice ?? 0),
+          min_order_qty: Number(sku.minOrderQty ?? r.minOrderQty ?? 1),
+          tier_count: r.priceTierCount ?? (sku.priceTiers?.length || 0),
+          tier_min_price: Number(r.tierMinPrice ?? sku.priceTiers?.[sku.priceTiers.length - 1]?.price ?? 0),
+          tier_max_price: Number(r.tierMaxPrice ?? sku.priceTiers?.[0]?.price ?? 0),
+          wholesale_enabled: r.wholesaleEnabled !== false,
+          auth_levels: r.authLevels || ['普通', '白银'],
+          distributors: r.distributorCount ?? 0,
+          monthly_sales: r.monthlySales ?? 0,
+          monthly_amount: r.monthlyAmount ?? 0,
+        } as WholesaleProduct
+      })
+    }
+  } catch {
+    // 保留 mock
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadList)
 
 const filteredList = computed(() => {
   return products.value.filter((p) => {
