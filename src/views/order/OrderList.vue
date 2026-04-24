@@ -83,186 +83,58 @@ const filters = reactive({
   province: '',
 })
 
-/* --------------------------------- 模拟数据 -------------------------------- */
-const allOrders = ref<Order[]>([
-  {
-    id: 'o-1',
-    order_no: 'YM20260418001',
-    channel: 'retail',
-    status: 'pending_pay',
-    buyer: '王雅婷',
-    buyer_phone: '138****2345',
-    province: '浙江',
-    total: 1280,
-    paid: 0,
-    pay_method: '待选择',
-    created_at: '2026-04-18 14:22',
-    items: [
-      {
-        sku_id: 'sku-1',
-        name: '青花缠枝莲茶具套装',
-        spec: '标准款',
-        price: 1280,
-        qty: 1,
-        image: '/placeholder.svg?height=56&width=56',
-      },
-    ],
-  },
-  {
-    id: 'o-2',
-    order_no: 'YM20260418002',
-    channel: 'wholesale',
-    status: 'pending_ship',
-    buyer: '杭州茗茶行',
-    buyer_phone: '139****6789',
-    province: '浙江',
-    total: 15600,
-    paid: 15600,
-    pay_method: '对公转账',
-    created_at: '2026-04-18 10:08',
-    items: [
-      {
-        sku_id: 'sku-2',
-        name: '羊脂玉长颈花瓶',
-        spec: '36cm 高',
-        price: 520,
-        qty: 20,
-        image: '/placeholder.svg?height=56&width=56',
-      },
-      {
-        sku_id: 'sku-3',
-        name: '汝窑天青主人杯',
-        spec: '120ml',
-        price: 280,
-        qty: 20,
-        image: '/placeholder.svg?height=56&width=56',
-      },
-    ],
-  },
-  {
-    id: 'o-3',
-    order_no: 'YM20260417008',
-    channel: 'live',
-    status: 'shipped',
-    buyer: '陈先生',
-    buyer_phone: '136****8888',
-    province: '广东',
-    total: 480,
-    paid: 480,
-    pay_method: '微信支付',
-    created_at: '2026-04-17 20:45',
-    items: [
-      {
-        sku_id: 'sku-4',
-        name: '青瓷莲花碗',
-        spec: '礼盒装',
-        price: 480,
-        qty: 1,
-        image: '/placeholder.svg?height=56&width=56',
-      },
-    ],
-    logistics: { company: '顺丰速运', tracking_no: 'SF1234567890' },
-  },
-  {
-    id: 'o-4',
-    order_no: 'YM20260417003',
-    channel: 'retail',
-    status: 'completed',
-    buyer: '李美玲',
-    buyer_phone: '137****5566',
-    province: '江苏',
-    total: 896,
-    paid: 896,
-    pay_method: '支付宝',
-    created_at: '2026-04-17 11:30',
-    items: [
-      {
-        sku_id: 'sku-5',
-        name: '粉彩仕女盖碗',
-        spec: '150ml',
-        price: 448,
-        qty: 2,
-        image: '/placeholder.svg?height=56&width=56',
-      },
-    ],
-    logistics: { company: '京东物流', tracking_no: 'JD5566778899' },
-  },
-  {
-    id: 'o-5',
-    order_no: 'YM20260416012',
-    channel: 'wholesale',
-    status: 'refund',
-    buyer: '北京瓷器商行',
-    buyer_phone: '135****9999',
-    province: '北京',
-    total: 9600,
-    paid: 9600,
-    pay_method: '对公转账',
-    created_at: '2026-04-16 15:12',
-    items: [
-      {
-        sku_id: 'sku-6',
-        name: '结晶釉观音瓶',
-        spec: '大号',
-        price: 960,
-        qty: 10,
-        image: '/placeholder.svg?height=56&width=56',
-      },
-    ],
-  },
-  {
-    id: 'o-6',
-    order_no: 'YM20260415006',
-    channel: 'offline',
-    status: 'closed',
-    buyer: '散客',
-    buyer_phone: '--',
-    province: '江西',
-    total: 380,
-    paid: 0,
-    pay_method: '--',
-    created_at: '2026-04-15 16:00',
-    items: [
-      {
-        sku_id: 'sku-7',
-        name: '青花小茶壶',
-        spec: '200ml',
-        price: 380,
-        qty: 1,
-        image: '/placeholder.svg?height=56&width=56',
-      },
-    ],
-  },
-])
+const allOrders = ref<Order[]>([])
+const loadError = ref('')
+
+function mapOrderStatus(s: any): OrderStatus {
+  const m: Record<string, OrderStatus> = {
+    pending_payment: 'pending_pay',
+    pending_pay: 'pending_pay',
+    paid: 'pending_ship',
+    pending_ship: 'pending_ship',
+    shipped: 'shipped',
+    completed: 'completed',
+    refund: 'refund',
+    refunding: 'refund',
+    closed: 'closed',
+    cancelled: 'closed',
+  }
+  return m[String(s)] || 'pending_pay'
+}
 
 async function loadOrders() {
+  loadError.value = ''
   try {
     const res: any = await orderApi.list({ page: 1, pageSize: 100 })
     const rows = (res?.list ?? []) as any[]
-    if (rows.length) {
-      allOrders.value = rows.map((r: any) => ({
-        id: String(r.id),
-        order_no: r.orderNo || r.code || '',
-        status: r.status || 'pending_payment',
-        channel: r.channel || 'retail',
-        customer_name: r.customerName || r.user?.realName || r.user?.nickname || '',
-        customer_phone: r.customerPhone || r.user?.phone || '',
-        province: r.province || r.shippingAddress?.province || '',
-        city: r.city || r.shippingAddress?.city || '',
-        amount: Number(r.totalAmount ?? r.amount ?? 0),
-        paid_amount: Number(r.paidAmount ?? 0),
-        created_at: r.createdAt || r.created_at || '',
-        items: r.items?.map((it: any) => ({
-          name: it.productName || it.name || '',
-          spec: it.spec || it.skuSpecs || '',
-          price: Number(it.price ?? 0),
-          qty: Number(it.qty ?? 1),
-          image: it.image || it.cover || '/placeholder.svg?height=56&width=56',
-        })) || [],
-      })) as any
-    }
-  } catch {
-    // 保留 mock
+    allOrders.value = rows.map((r: any): Order => ({
+      id: String(r.id),
+      order_no: r.orderNo || r.code || '',
+      channel: (r.channel || 'retail') as OrderChannel,
+      status: mapOrderStatus(r.status),
+      buyer: r.customerName || r.user?.realName || r.user?.nickname || r.buyer || '',
+      buyer_phone: r.customerPhone || r.user?.phone || r.buyer_phone || '',
+      province: r.province || r.shippingAddress?.province || '',
+      total: Number(r.totalAmount ?? r.amount ?? r.total ?? 0),
+      paid: Number(r.paidAmount ?? r.paid ?? 0),
+      pay_method: r.payMethod || r.pay_method || '--',
+      created_at: r.createdAt || r.created_at || '',
+      items: (r.items || []).map((it: any) => ({
+        sku_id: String(it.skuId ?? it.sku_id ?? it.id ?? ''),
+        name: it.productName || it.name || '',
+        spec: it.spec || it.skuSpecs || '',
+        price: Number(it.price ?? 0),
+        qty: Number(it.qty ?? it.quantity ?? 1),
+        image: it.image || it.cover || '/placeholder.svg?height=56&width=56',
+      })),
+      logistics: r.logistics || (r.shippingCompany ? {
+        company: r.shippingCompany,
+        tracking_no: r.trackingNo || '',
+      } : undefined),
+    }))
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    allOrders.value = []
   }
 }
 
@@ -372,6 +244,12 @@ function exportData() {
 
 <template>
   <div class="order-list-page">
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadOrders">点击重试</el-button>
+      </template>
+    </el-alert>
     <!-- 统计卡片 -->
     <div class="stats-row">
       <div class="stat-card">
@@ -426,7 +304,7 @@ function exportData() {
             :prefix-icon="Search"
           />
         </el-form-item>
-        <el-form-item label="下单渠道">
+        <el-form-item label="下单���道">
           <el-select v-model="filters.channel" placeholder="全部渠道" clearable style="width: 140px">
             <el-option value="retail" label="零售" />
             <el-option value="wholesale" label="批发" />

@@ -26,97 +26,9 @@ interface Category {
   children?: Category[]
 }
 
-/* --------------------------------- 默认数据（后端未就绪时的兜底） -------------------------------- */
-const fallbackTree: Category[] = ([
-  {
-    id: 'c-1',
-    name: '茶具',
-    code: 'TEAWARE',
-    sort: 1,
-    enabled: true,
-    product_count: 128,
-    description: '茶壶、茶杯、茶海、盖碗等饮茶器具',
-    children: [
-      {
-        id: 'c-1-1',
-        name: '茶壶',
-        code: 'TEA-POT',
-        sort: 1,
-        enabled: true,
-        product_count: 48,
-        children: [
-          { id: 'c-1-1-1', name: '紫砂壶', code: 'TP-ZISHA', sort: 1, enabled: true, product_count: 22 },
-          { id: 'c-1-1-2', name: '陶瓷壶', code: 'TP-TC', sort: 2, enabled: true, product_count: 18 },
-          { id: 'c-1-1-3', name: '玻璃壶', code: 'TP-GLASS', sort: 3, enabled: false, product_count: 8 },
-        ],
-      },
-      {
-        id: 'c-1-2',
-        name: '主人杯',
-        code: 'TEA-CUP',
-        sort: 2,
-        enabled: true,
-        product_count: 52,
-      },
-      {
-        id: 'c-1-3',
-        name: '盖碗',
-        code: 'TEA-GAIWAN',
-        sort: 3,
-        enabled: true,
-        product_count: 28,
-      },
-    ],
-  },
-  {
-    id: 'c-2',
-    name: '花瓶',
-    code: 'VASE',
-    sort: 2,
-    enabled: true,
-    product_count: 64,
-    description: '观赏类陶瓷花瓶',
-    children: [
-      { id: 'c-2-1', name: '长颈瓶', code: 'VS-LONG', sort: 1, enabled: true, product_count: 24 },
-      { id: 'c-2-2', name: '观音瓶', code: 'VS-GY', sort: 2, enabled: true, product_count: 18 },
-      { id: 'c-2-3', name: '天球瓶', code: 'VS-TQ', sort: 3, enabled: true, product_count: 22 },
-    ],
-  },
-  {
-    id: 'c-3',
-    name: '餐具',
-    code: 'DINNERWARE',
-    sort: 3,
-    enabled: true,
-    product_count: 92,
-    description: '日用餐具套装',
-    children: [
-      { id: 'c-3-1', name: '碗', code: 'DW-BOWL', sort: 1, enabled: true, product_count: 38 },
-      { id: 'c-3-2', name: '盘', code: 'DW-PLATE', sort: 2, enabled: true, product_count: 28 },
-      { id: 'c-3-3', name: '勺筷架', code: 'DW-HOLDER', sort: 3, enabled: true, product_count: 26 },
-    ],
-  },
-  {
-    id: 'c-4',
-    name: '摆件',
-    code: 'ORNAMENT',
-    sort: 4,
-    enabled: true,
-    product_count: 36,
-  },
-  {
-    id: 'c-5',
-    name: '下架类目',
-    code: 'DEPRECATED',
-    sort: 99,
-    enabled: false,
-    product_count: 0,
-    description: '已停用的历史分类归档',
-  },
-])
-
 const treeData = ref<Category[]>([])
 const loading = ref(false)
+const loadError = ref('')
 
 /** 把后端返回的扁平/嵌套分类数据规范化成树 */
 function normalize(list: any[]): Category[] {
@@ -134,12 +46,14 @@ function normalize(list: any[]): Category[] {
 
 async function loadTree() {
   loading.value = true
+  loadError.value = ''
   try {
     const res: any = await categoryApi.tree()
     const list = Array.isArray(res) ? res : res?.list || []
-    treeData.value = list.length ? normalize(list) : fallbackTree
-  } catch {
-    treeData.value = fallbackTree
+    treeData.value = normalize(list)
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    treeData.value = []
   } finally {
     loading.value = false
   }
@@ -390,6 +304,12 @@ async function handleToggle(node: Category) {
 
 <template>
   <div class="category-page">
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadTree">点击重试</el-button>
+      </template>
+    </el-alert>
     <!-- 顶部统计 -->
     <div class="stats-row">
       <div class="stat-card">

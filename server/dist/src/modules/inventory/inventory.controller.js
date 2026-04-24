@@ -105,11 +105,26 @@ let InventoryController = class InventoryController {
         return this.svc.recordList(q);
     }
     async op(dto, user) {
+        return this.execOp(dto, user, dto.type);
+    }
+    // 入库
+    stockIn(dto, user) {
+        return this.execOp(dto, user, 'in');
+    }
+    // 出库
+    stockOut(dto, user) {
+        return this.execOp(dto, user, 'out');
+    }
+    // 盘点调整（支持正负 qty）
+    adjust(dto, user) {
+        return this.execOp(dto, user, 'inventory');
+    }
+    execOp(dto, user, type) {
         const orderNo = dto.orderNo ||
-            `${dto.type.toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            `${type.toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
         return this.svc.stockOp({
             orderNo,
-            type: dto.type,
+            type,
             skuId: dto.skuId,
             warehouseId: dto.warehouseId,
             qty: dto.qty,
@@ -156,6 +171,30 @@ __decorate([
     __metadata("design:paramtypes", [StockOpDto, Object]),
     __metadata("design:returntype", Promise)
 ], InventoryController.prototype, "op", null);
+__decorate([
+    (0, common_1.Post)('stock-in'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [StockOpDto, Object]),
+    __metadata("design:returntype", void 0)
+], InventoryController.prototype, "stockIn", null);
+__decorate([
+    (0, common_1.Post)('stock-out'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [StockOpDto, Object]),
+    __metadata("design:returntype", void 0)
+], InventoryController.prototype, "stockOut", null);
+__decorate([
+    (0, common_1.Post)('adjust'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [StockOpDto, Object]),
+    __metadata("design:returntype", void 0)
+], InventoryController.prototype, "adjust", null);
 exports.InventoryController = InventoryController = __decorate([
     (0, common_1.Controller)('admin/inventory'),
     __metadata("design:paramtypes", [inventory_service_1.InventoryService])

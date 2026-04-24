@@ -11,6 +11,13 @@
       </div>
     </div>
 
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadRecords">点击重试</el-button>
+      </template>
+    </el-alert>
+
     <el-card class="filter-card" shadow="never">
       <el-form inline :model="filter" class="filter-form">
         <el-form-item label="业务类型">
@@ -174,158 +181,33 @@ const pagination = reactive({
   total: 8,
 })
 
-const recordList = ref<StockItem[]>([
-  {
-    id: 1,
-    orderNo: 'IN-20260420-00128',
-    createdAt: '2026-04-20 14:32:18',
-    direction: 'in',
-    type: 'purchase',
-    sku: 'YM-QHC-001-R',
-    productName: '青花瓷盖碗茶具（10头）',
-    warehouseName: '主仓（景德镇）',
-    qty: 200,
-    beforeQty: 156,
-    afterQty: 356,
-    refOrder: 'PO-2026-0412-003',
-    operator: '张建国',
-    remark: '春季补货批次',
-  },
-  {
-    id: 2,
-    orderNo: 'OUT-20260420-00542',
-    createdAt: '2026-04-20 11:08:45',
-    direction: 'out',
-    type: 'sale',
-    sku: 'YM-YZHP-002-W',
-    productName: '羊脂玉白瓷花瓶',
-    warehouseName: '主仓（景德镇）',
-    qty: 5,
-    beforeQty: 28,
-    afterQty: 23,
-    refOrder: 'SO-2026-04200-891',
-    operator: '李明',
-    remark: '批发订单出库',
-  },
-  {
-    id: 3,
-    orderNo: 'OUT-20260420-00541',
-    createdAt: '2026-04-20 10:45:22',
-    direction: 'out',
-    type: 'sale',
-    sku: 'YM-QHCP-005',
-    productName: '青花瓷餐盘（8寸）',
-    warehouseName: '华南仓（广州）',
-    qty: 12,
-    beforeQty: 432,
-    afterQty: 420,
-    refOrder: 'SO-2026-04200-890',
-    operator: '李明',
-    remark: '零售订单合并出库',
-  },
-  {
-    id: 4,
-    orderNo: 'TRANS-20260419-00012',
-    createdAt: '2026-04-19 16:20:10',
-    direction: 'in',
-    type: 'transfer',
-    sku: 'YM-RYZRB-003',
-    productName: '汝窑主人杯（天青釉）',
-    warehouseName: '华东仓（上海）',
-    qty: 50,
-    beforeQty: 0,
-    afterQty: 50,
-    refOrder: 'TR-2026-0419-002',
-    operator: '王芳',
-    remark: '从主仓调拨至华东仓',
-  },
-  {
-    id: 5,
-    orderNo: 'TRANS-20260419-00011',
-    createdAt: '2026-04-19 16:20:10',
-    direction: 'out',
-    type: 'transfer',
-    sku: 'YM-RYZRB-003',
-    productName: '汝窑主人杯（天青釉）',
-    warehouseName: '主仓（景德镇）',
-    qty: 50,
-    beforeQty: 60,
-    afterQty: 10,
-    refOrder: 'TR-2026-0419-002',
-    operator: '王芳',
-    remark: '调拨至华东仓',
-  },
-  {
-    id: 6,
-    orderNo: 'IN-20260418-00456',
-    createdAt: '2026-04-18 09:15:33',
-    direction: 'in',
-    type: 'return',
-    sku: 'YM-QHC-001-R',
-    productName: '青花瓷盖碗茶具（10头）',
-    warehouseName: '主仓（景德镇）',
-    qty: 2,
-    beforeQty: 154,
-    afterQty: 156,
-    refOrder: 'RT-2026-0418-007',
-    operator: '张建国',
-    remark: '客户退货：包装破损',
-  },
-  {
-    id: 7,
-    orderNo: 'ADJ-20260417-00003',
-    createdAt: '2026-04-17 17:45:00',
-    direction: 'in',
-    type: 'surplus',
-    sku: 'YM-DHBC-006',
-    productName: '德化白瓷观音摆件',
-    warehouseName: '主仓（景德镇）',
-    qty: 3,
-    beforeQty: 42,
-    afterQty: 45,
-    operator: '盘点组',
-    remark: '月度盘点盘盈',
-  },
-  {
-    id: 8,
-    orderNo: 'ADJ-20260417-00002',
-    createdAt: '2026-04-17 17:42:00',
-    direction: 'out',
-    type: 'loss',
-    sku: 'YM-LQQP-007',
-    productName: '龙泉青瓷莲花碗',
-    warehouseName: '华东仓（上海）',
-    qty: 2,
-    beforeQty: 91,
-    afterQty: 89,
-    operator: '盘点组',
-    remark: '月度盘点盘亏：运输破损',
-  },
-])
+const recordList = ref<StockItem[]>([])
+const loadError = ref('')
 
 async function loadRecords() {
+  loadError.value = ''
   try {
     const res: any = await inventoryApi.records({ page: 1, pageSize: 100 })
     const rows = (res?.list ?? []) as any[]
-    if (rows.length) {
-      recordList.value = rows.map((r: any, i: number) => ({
-        id: r.id ?? i + 1,
-        orderNo: r.orderNo || r.code || '',
-        type: r.type || 'in',
-        warehouseName: r.warehouse?.name || r.warehouseName || '',
-        sku: r.sku?.code || r.skuCode || '',
-        productName: r.sku?.product?.name || r.productName || '',
-        spec: r.sku?.specs || r.spec || '',
-        qty: Number(r.qty ?? 0),
-        beforeQty: Number(r.beforeQty ?? 0),
-        afterQty: Number(r.afterQty ?? 0),
-        operator: r.operator || r.createdBy?.realName || '',
-        remark: r.remark || '',
-        createdAt: r.createdAt || '',
-      })) as any
-    }
-  } catch {
-    // 保留 mock
+    recordList.value = rows.map((r: any, i: number) => ({
+      id: r.id ?? i + 1,
+      orderNo: r.orderNo || r.code || '',
+      direction: r.direction || (r.type === 'in' || r.type === 'purchase' || r.type === 'return' || r.type === 'surplus' ? 'in' : 'out'),
+      type: r.type || 'purchase',
+      warehouseName: r.warehouse?.name || r.warehouseName || '',
+      sku: r.sku?.code || r.skuCode || '',
+      productName: r.sku?.product?.name || r.productName || '',
+      qty: Number(r.qty ?? 0),
+      beforeQty: Number(r.beforeQty ?? 0),
+      afterQty: Number(r.afterQty ?? 0),
+      refOrder: r.refOrder || '',
+      operator: r.operator || r.createdBy?.realName || '',
+      remark: r.remark || '',
+      createdAt: r.createdAt || '',
+    })) as any
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    recordList.value = []
   }
 }
 

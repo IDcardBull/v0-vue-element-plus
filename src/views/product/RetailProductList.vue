@@ -35,96 +35,6 @@ export interface RetailProduct {
   campaign: '' | '满减' | '拼团' | '限时折扣' | '积分兑换' // 关联营销
 }
 
-/* ===================== 模拟数据 ===================== */
-
-const mockProducts: RetailProduct[] = [
-  {
-    id: '1',
-    code: 'YM-CHA-0001',
-    name: '青花瓷手绘八宝纹茶具套装（一壶四杯）',
-    image:
-      'https://images.unsplash.com/photo-1563822249366-3efb23b8e0c9?w=200&q=80&auto=format&fit=crop',
-    category: '茶器',
-    craft: '青花瓷',
-    retail_price: 688,
-    member_price: 598,
-    retail_on_sale: true,
-    sales_30d: 1268,
-    rating: 4.9,
-    stock_available: 156,
-    stock_warning: 30,
-    campaign: '满减',
-  },
-  {
-    id: '2',
-    code: 'YM-HUA-0012',
-    name: '羊脂玉白瓷·梅兰竹菊浮雕花瓶',
-    image:
-      'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?w=200&q=80&auto=format&fit=crop',
-    category: '花器',
-    craft: '羊脂玉白瓷',
-    retail_price: 1280,
-    member_price: 1180,
-    retail_on_sale: true,
-    sales_30d: 326,
-    rating: 4.8,
-    stock_available: 12,
-    stock_warning: 20,
-    campaign: '限时折扣',
-  },
-  {
-    id: '3',
-    code: 'YM-CHA-0027',
-    name: '汝窑天青釉·开片主人杯（单只礼盒装）',
-    image:
-      'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=200&q=80&auto=format&fit=crop',
-    category: '茶器',
-    craft: '汝窑天青釉',
-    retail_price: 398,
-    member_price: 358,
-    retail_on_sale: false,
-    sales_30d: 0,
-    rating: 4.7,
-    stock_available: 248,
-    stock_warning: 50,
-    campaign: '',
-  },
-  {
-    id: '4',
-    code: 'YM-CAN-0008',
-    name: '粉彩描金·福寿双全祝寿餐具 28 件套',
-    image:
-      'https://images.unsplash.com/photo-1578321272176-b7bbc0679853?w=200&q=80&auto=format&fit=crop',
-    category: '餐具',
-    craft: '粉彩',
-    retail_price: 2680,
-    member_price: 2480,
-    retail_on_sale: true,
-    sales_30d: 87,
-    rating: 5.0,
-    stock_available: 46,
-    stock_warning: 15,
-    campaign: '拼团',
-  },
-  {
-    id: '5',
-    code: 'YM-JIU-0003',
-    name: '手绘青釉·山水纹品酒对杯',
-    image:
-      'https://images.unsplash.com/photo-1536520002442-39764a41e987?w=200&q=80&auto=format&fit=crop',
-    category: '酒器',
-    craft: '手绘青釉',
-    retail_price: 268,
-    member_price: 238,
-    retail_on_sale: true,
-    sales_30d: 542,
-    rating: 4.6,
-    stock_available: 8,
-    stock_warning: 20,
-    campaign: '积分兑换',
-  },
-]
-
 /* ===================== 筛选 & 分页 ===================== */
 
 const filter = reactive({
@@ -144,7 +54,8 @@ const campaignOptions: RetailProduct['campaign'][] = [
 ]
 
 const page = reactive({ current: 1, size: 10 })
-const products = ref<RetailProduct[]>([...mockProducts])
+const products = ref<RetailProduct[]>([])
+const loadError = ref('')
 
 /** 后端商品映射为前端零售商品结构 */
 function mapFromApi(row: any): RetailProduct {
@@ -169,12 +80,14 @@ function mapFromApi(row: any): RetailProduct {
 
 async function loadList() {
   loading.value = true
+  loadError.value = ''
   try {
     const res: any = await productApi.list({ page: page.current, pageSize: 100, channel: 'retail' })
     const rows = (res?.list ?? []) as any[]
-    if (rows.length) products.value = rows.map(mapFromApi)
-  } catch {
-    // 后端未就绪时保留 mock
+    products.value = rows.map(mapFromApi)
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    products.value = []
   } finally {
     loading.value = false
   }
@@ -287,6 +200,12 @@ function campaignTagType(c: RetailProduct['campaign']) {
 
 <template>
   <div class="retail-product">
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadList">点击重试</el-button>
+      </template>
+    </el-alert>
     <!-- 顶部统计 -->
     <div class="stat-row">
       <el-card shadow="never" class="stat-card">

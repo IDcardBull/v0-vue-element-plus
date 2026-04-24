@@ -11,6 +11,13 @@
       </div>
     </div>
 
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadCustomers">点击重试</el-button>
+      </template>
+    </el-alert>
+
     <!-- 统计卡片 -->
     <div class="stat-row">
       <div class="stat-card">
@@ -257,126 +264,33 @@ const pagination = reactive({
   total: 6,
 })
 
-const customers = ref<Customer[]>([
-  {
-    id: 1,
-    memberId: '100028',
-    avatar: '/placeholder.svg?height=44&width=44',
-    nickname: '沈墨轩',
-    phone: '138****8821',
-    gender: 'male',
-    level: 'V4',
-    tags: ['高价值', '复购用户', '茶具爱好者'],
-    totalAmount: 128600,
-    orderCount: 42,
-    points: 28560,
-    region: '北京市 海淀区',
-    createdAt: '2023-08-12 14:23',
-    lastActive: '2 小时前',
-  },
-  {
-    id: 2,
-    memberId: '100189',
-    avatar: '/placeholder.svg?height=44&width=44',
-    nickname: '林雅琴',
-    phone: '186****5532',
-    gender: 'female',
-    level: 'V3',
-    tags: ['活跃', '礼品购买'],
-    totalAmount: 68900,
-    orderCount: 28,
-    points: 14280,
-    region: '上海市 浦东新区',
-    createdAt: '2023-11-05 10:08',
-    lastActive: '1 天前',
-  },
-  {
-    id: 3,
-    memberId: '100456',
-    avatar: '/placeholder.svg?height=44&width=44',
-    nickname: '陈景明',
-    phone: '139****2210',
-    gender: 'male',
-    level: 'V2',
-    tags: ['沉默用户', '流失预警'],
-    totalAmount: 18200,
-    orderCount: 8,
-    points: 3640,
-    region: '广东省 深圳市',
-    createdAt: '2024-02-18 16:42',
-    lastActive: '45 天前',
-  },
-  {
-    id: 4,
-    memberId: '100782',
-    avatar: '/placeholder.svg?height=44&width=44',
-    nickname: '苏婉清',
-    phone: '157****9012',
-    gender: 'female',
-    level: 'V2',
-    tags: ['活跃', '花瓶收藏'],
-    totalAmount: 22800,
-    orderCount: 12,
-    points: 4560,
-    region: '浙江省 杭州市',
-    createdAt: '2024-03-20 09:15',
-    lastActive: '3 小时前',
-  },
-  {
-    id: 5,
-    memberId: '101023',
-    avatar: '/placeholder.svg?height=44&width=44',
-    nickname: '周慕云',
-    phone: '159****3308',
-    gender: 'male',
-    level: 'V1',
-    tags: ['新客'],
-    totalAmount: 3680,
-    orderCount: 3,
-    points: 736,
-    region: '四川省 成都市',
-    createdAt: '2026-02-08 11:30',
-    lastActive: '5 分钟前',
-  },
-  {
-    id: 6,
-    memberId: '101245',
-    avatar: '/placeholder.svg?height=44&width=44',
-    nickname: '韩雪',
-    phone: '180****7766',
-    gender: 'female',
-    level: 'V0',
-    tags: ['新注册', '未首购'],
-    totalAmount: 0,
-    orderCount: 0,
-    points: 100,
-    region: '江苏省 南京市',
-    createdAt: '2026-04-15 18:22',
-    lastActive: '昨天',
-  },
-])
+const customers = ref<Customer[]>([])
+const loadError = ref('')
 
 async function loadCustomers() {
+  loadError.value = ''
   try {
     const res: any = await customerApi.list({ page: 1, pageSize: 100 })
     const rows = (res?.list ?? []) as any[]
-    if (rows.length) {
-      customers.value = rows.map((r: any, i: number) => ({
-        id: r.id ?? i + 1,
-        avatar: r.avatar || '',
-        name: r.realName || r.nickname || r.name || '',
-        phone: r.phone || '',
-        level: r.level || '普通会员',
-        orders: Number(r.orderCount ?? 0),
-        totalAmount: Number(r.totalAmount ?? 0),
-        points: Number(r.points ?? 0),
-        region: r.region || '',
-        createdAt: r.createdAt || '',
-        lastActive: r.lastActive || '',
-      })) as any
-    }
-  } catch {
-    // 保留 mock
+    customers.value = rows.map((r: any, i: number) => ({
+      id: r.id ?? i + 1,
+      memberId: r.memberId || r.member_id || String(r.id ?? ''),
+      avatar: r.avatar || '/placeholder.svg?height=44&width=44',
+      nickname: r.nickname || r.realName || r.name || '',
+      phone: r.phone || '',
+      gender: (r.gender as 'male' | 'female' | 'unknown') || 'unknown',
+      level: r.level?.name || r.levelName || r.level || 'V0',
+      tags: Array.isArray(r.tags) ? r.tags : (r.tagList ?? []),
+      totalAmount: Number(r.totalAmount ?? 0),
+      orderCount: Number(r.orderCount ?? 0),
+      points: Number(r.points ?? 0),
+      region: r.region || [r.province, r.city].filter(Boolean).join(' ') || '',
+      createdAt: r.createdAt || '',
+      lastActive: r.lastActive || r.lastLoginAt || '',
+    })) as any
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    customers.value = []
   }
 }
 

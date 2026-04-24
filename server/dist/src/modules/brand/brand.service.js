@@ -70,11 +70,12 @@ let BrandService = class BrandService {
             throw new common_1.BadRequestException('该品牌下还有商品，无法删除');
         return this.prisma.brand.delete({ where: { id } });
     }
-    async toggleStatus(id) {
+    async toggleStatus(id, next) {
         const b = await this.findById(id);
+        const target = next === undefined ? (b.status === 1 ? 0 : 1) : next;
         return this.prisma.brand.update({
             where: { id },
-            data: { status: b.status === 1 ? 0 : 1 },
+            data: { status: target },
         });
     }
 };

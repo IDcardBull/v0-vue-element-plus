@@ -11,6 +11,13 @@
       </div>
     </div>
 
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadList">点击重试</el-button>
+      </template>
+    </el-alert>
+
     <!-- 库存汇总卡片 -->
     <div class="stat-row">
       <div class="stat-card">
@@ -253,152 +260,33 @@ const pagination = reactive({
   total: 8,
 })
 
-const stockList = ref<StockRow[]>([
-  {
-    id: 1,
-    sku: 'YM-QHC-001-R',
-    productName: '青花瓷盖碗茶具（10头）',
-    spec: '红色礼盒 / 标准款',
-    image: '/placeholder.svg?height=48&width=48',
-    category: '茶具套装',
-    warehouseName: '主仓（景德镇）',
-    available: 156,
-    locked: 12,
-    inTransit: 200,
-    warningLine: 50,
-    maxStock: 500,
-    unitPrice: 880,
-  },
-  {
-    id: 2,
-    sku: 'YM-YZHP-002-W',
-    productName: '羊脂玉白瓷花瓶',
-    spec: '30cm 高 / 白色',
-    image: '/placeholder.svg?height=48&width=48',
-    category: '花瓶',
-    warehouseName: '主仓（景德镇）',
-    available: 23,
-    locked: 5,
-    inTransit: 50,
-    warningLine: 30,
-    maxStock: 200,
-    unitPrice: 1280,
-  },
-  {
-    id: 3,
-    sku: 'YM-RYZRB-003',
-    productName: '汝窑主人杯（天青釉）',
-    spec: '单杯 80ml',
-    image: '/placeholder.svg?height=48&width=48',
-    category: '品茗杯',
-    warehouseName: '华东仓（上海）',
-    available: 8,
-    locked: 2,
-    inTransit: 100,
-    warningLine: 30,
-    maxStock: 300,
-    unitPrice: 380,
-  },
-  {
-    id: 4,
-    sku: 'YM-ZSHU-004-XS',
-    productName: '紫砂西施壶（原矿朱泥）',
-    spec: '200ml / 小号',
-    image: '/placeholder.svg?height=48&width=48',
-    category: '紫砂壶',
-    warehouseName: '主仓（景德镇）',
-    available: 0,
-    locked: 0,
-    inTransit: 30,
-    warningLine: 20,
-    maxStock: 150,
-    unitPrice: 1680,
-  },
-  {
-    id: 5,
-    sku: 'YM-QHCP-005',
-    productName: '青花瓷餐盘（8寸）',
-    spec: '8寸 / 传统花纹',
-    image: '/placeholder.svg?height=48&width=48',
-    category: '餐具',
-    warehouseName: '华南仓（广州）',
-    available: 420,
-    locked: 32,
-    inTransit: 0,
-    warningLine: 80,
-    maxStock: 600,
-    unitPrice: 128,
-  },
-  {
-    id: 6,
-    sku: 'YM-DHBC-006',
-    productName: '德化白瓷观音摆件',
-    spec: '高 38cm',
-    image: '/placeholder.svg?height=48&width=48',
-    category: '摆件',
-    warehouseName: '主仓（景德镇）',
-    available: 45,
-    locked: 3,
-    inTransit: 20,
-    warningLine: 15,
-    maxStock: 100,
-    unitPrice: 2680,
-  },
-  {
-    id: 7,
-    sku: 'YM-LQQP-007',
-    productName: '龙泉青瓷莲花碗',
-    spec: '直径 15cm',
-    image: '/placeholder.svg?height=48&width=48',
-    category: '餐具',
-    warehouseName: '华东仓（上海）',
-    available: 89,
-    locked: 8,
-    inTransit: 50,
-    warningLine: 40,
-    maxStock: 250,
-    unitPrice: 360,
-  },
-  {
-    id: 8,
-    sku: 'YM-FSGJ-008',
-    productName: '仿宋官窑茶叶罐',
-    spec: '中号 / 开片釉',
-    image: '/placeholder.svg?height=48&width=48',
-    category: '茶具配件',
-    warehouseName: '主仓（景德镇）',
-    available: 15,
-    locked: 1,
-    inTransit: 0,
-    warningLine: 25,
-    maxStock: 120,
-    unitPrice: 560,
-  },
-])
+const stockList = ref<StockRow[]>([])
+const loadError = ref('')
 
 async function loadList() {
   loading.value = true
+  loadError.value = ''
   try {
     const res: any = await inventoryApi.stockList({ page: 1, pageSize: 100 })
     const rows = (res?.list ?? []) as any[]
-    if (rows.length) {
-      stockList.value = rows.map((r: any, i: number) => ({
-        id: r.id ?? i + 1,
-        sku: r.sku?.code || r.skuCode || '',
-        product: r.sku?.product?.name || r.productName || '',
-        cover: r.sku?.product?.mainImage || '/placeholder.svg',
-        specs: r.sku?.specs || r.specs || '',
-        warehouse: r.warehouse?.name || r.warehouseName || '主仓',
-        available: Number(r.available ?? r.availableQty ?? 0),
-        locked: Number(r.locked ?? r.lockedQty ?? 0),
-        inTransit: Number(r.inTransit ?? 0),
-        warningLine: Number(r.warningLine ?? r.safetyStock ?? 20),
-        maxStock: Number(r.maxStock ?? 200),
-        unitPrice: Number(r.unitPrice ?? r.sku?.retailPrice ?? 0),
-      })) as any
-    }
-  } catch {
-    // 保留 mock
+    stockList.value = rows.map((r: any, i: number) => ({
+      id: r.id ?? i + 1,
+      sku: r.sku?.code || r.skuCode || '',
+      productName: r.sku?.product?.name || r.productName || '',
+      spec: r.sku?.specs || r.spec || r.specs || '',
+      image: r.sku?.product?.mainImage || '/placeholder.svg',
+      category: r.sku?.product?.category?.name || r.category || '',
+      warehouseName: r.warehouse?.name || r.warehouseName || '主仓',
+      available: Number(r.available ?? r.availableQty ?? 0),
+      locked: Number(r.locked ?? r.lockedQty ?? 0),
+      inTransit: Number(r.inTransit ?? 0),
+      warningLine: Number(r.warningLine ?? r.safetyStock ?? 20),
+      maxStock: Number(r.maxStock ?? 200),
+      unitPrice: Number(r.unitPrice ?? r.sku?.retailPrice ?? 0),
+    })) as any
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    stockList.value = []
   } finally {
     loading.value = false
   }
@@ -478,8 +366,9 @@ function handleAdjustSubmit() {
   adjustVisible.value = false
 }
 
-function handleRefresh() {
-  ElMessage.success('库存数据已刷新')
+async function handleRefresh() {
+  await loadList()
+  if (!loadError.value) ElMessage.success('库存数据已刷新')
 }
 
 function handleReset() {

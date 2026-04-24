@@ -68,6 +68,9 @@ let CategoryController = class CategoryController {
     update(id, dto) {
         return this.svc.update(id, dto);
     }
+    patch(id, dto) {
+        return this.svc.update(id, dto);
+    }
     toggle(id) {
         return this.svc.toggleStatus(id);
     }
@@ -112,6 +115,14 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CategoryController.prototype, "update", null);
 __decorate([
+    (0, common_1.Patch)(':id'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, CategoryDto]),
+    __metadata("design:returntype", void 0)
+], CategoryController.prototype, "patch", null);
+__decorate([
     (0, common_1.Patch)(':id/toggle'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __metadata("design:type", Function),
@@ -126,7 +137,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CategoryController.prototype, "remove", null);
 exports.CategoryController = CategoryController = __decorate([
-    (0, common_1.Controller)('admin/category'),
+    (0, common_1.Controller)('admin/categories'),
     __metadata("design:paramtypes", [category_service_1.CategoryService])
 ], CategoryController);
 //# sourceMappingURL=category.controller.js.map

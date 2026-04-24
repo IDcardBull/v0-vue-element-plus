@@ -18,6 +18,7 @@ const stats = ref<StatCard[]>([
 
 const topProducts = ref<Array<{ name: string; quantity: number; amount: number }>>([])
 const loading = ref(true)
+const errorMsg = ref('')
 
 function formatMoney(n: number) {
   return '¥' + Math.round(n).toLocaleString('zh-CN')
@@ -25,6 +26,7 @@ function formatMoney(n: number) {
 
 async function loadData() {
   loading.value = true
+  errorMsg.value = ''
   try {
     const [overview, top] = await Promise.all([fetchOverview(), fetchTopProducts(5)])
     stats.value = [
@@ -34,21 +36,15 @@ async function loadData() {
       { label: '待发货订单', value: overview.pendingShipCount ?? 0, tone: 'danger', icon: 'Box' },
     ]
     topProducts.value = Array.isArray(top) ? top : []
-  } catch {
-    // 后端未就绪时使用示例数据兜底
+  } catch (e: any) {
+    errorMsg.value = e?.message || '后端服务不可用，请检查 NestJS 是否已启动'
     stats.value = [
-      { label: '今日订单数', value: 128, tone: 'primary', icon: 'ShoppingCart' },
-      { label: '今日支付金额', value: formatMoney(38420), tone: 'success', icon: 'Money' },
-      { label: '库存预警 SKU', value: 6, tone: 'warning', icon: 'Warning' },
-      { label: '待发货订单', value: 23, tone: 'danger', icon: 'Box' },
+      { label: '今日订单数', value: 0, tone: 'primary', icon: 'ShoppingCart' },
+      { label: '今日支付金额', value: formatMoney(0), tone: 'success', icon: 'Money' },
+      { label: '库存预警 SKU', value: 0, tone: 'warning', icon: 'Warning' },
+      { label: '待发货订单', value: 0, tone: 'danger', icon: 'Box' },
     ]
-    topProducts.value = [
-      { name: '青花瓷茶具套装（六件套/青花缠枝纹）', quantity: 86, amount: 51600 },
-      { name: '羊脂玉花瓶（中号/素面）', quantity: 42, amount: 62000 },
-      { name: '汝窑主人杯（天青釉/150ml）', quantity: 38, amount: 9600 },
-      { name: '仿宋官窑茶叶罐（中号/开片釉）', quantity: 27, amount: 10260 },
-      { name: '德化白瓷盖碗（110ml）', quantity: 21, amount: 4180 },
-    ]
+    topProducts.value = []
   } finally {
     loading.value = false
   }
@@ -59,6 +55,19 @@ onMounted(loadData)
 
 <template>
   <div class="dashboard" v-loading="loading">
+    <el-alert
+      v-if="errorMsg"
+      :title="errorMsg"
+      type="error"
+      show-icon
+      :closable="false"
+      class="err-alert"
+    >
+      <template #default>
+        <div>后端服务不可用，数据无法加载。请检查 NestJS 是否运行在 :3001 并确认 MySQL 已连接。</div>
+        <el-button type="danger" size="small" link @click="loadData">点击重试</el-button>
+      </template>
+    </el-alert>
     <el-row :gutter="16">
       <el-col v-for="s in stats" :key="s.label" :xs="24" :sm="12" :md="6">
         <el-card shadow="hover" class="stat-card">
@@ -104,6 +113,9 @@ onMounted(loadData)
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.err-alert {
+  margin-bottom: 4px;
 }
 .mt-16 {
   margin-top: 16px;

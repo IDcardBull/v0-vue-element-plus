@@ -8,6 +8,13 @@
       <el-button type="primary" :icon="Plus" @click="handleCreate">新增品牌</el-button>
     </div>
 
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" class="mb-12">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadList">点击重试</el-button>
+      </template>
+    </el-alert>
+
     <el-card class="filter-card" shadow="never">
       <el-form inline :model="filter" class="filter-form">
         <el-form-item label="品牌名称">
@@ -189,93 +196,12 @@ const pagination = reactive({
   total: 0,
 })
 
-/** 默认数据：后端未就绪时使用，上线后自动被 API 数据覆盖 */
-const fallbackBrands: Brand[] = [
-  {
-    id: 1,
-    logo: '/placeholder.svg?height=48&width=48',
-    name: '央茗',
-    englishName: 'YANGMING',
-    code: 'YM001',
-    origin: '江西景德镇',
-    owner: '央茗陶瓷有限公司',
-    goodsCount: 128,
-    sort: 1,
-    status: 'active',
-    createdAt: '2024-03-15 10:23:00',
-    description: '央茗陶瓷传承千年景德镇制瓷工艺，专注高端日用瓷与艺术瓷创作。',
-  },
-  {
-    id: 2,
-    logo: '/placeholder.svg?height=48&width=48',
-    name: '御窑',
-    englishName: 'YUYAO',
-    code: 'YY002',
-    origin: '江西景德镇',
-    owner: '御窑文化艺术有限公司',
-    goodsCount: 86,
-    sort: 2,
-    status: 'active',
-    createdAt: '2024-03-20 14:12:00',
-  },
-  {
-    id: 3,
-    logo: '/placeholder.svg?height=48&width=48',
-    name: '龙泉青瓷',
-    englishName: 'LONGQUAN',
-    code: 'LQ003',
-    origin: '浙江龙泉',
-    owner: '龙泉青瓷研究院',
-    goodsCount: 54,
-    sort: 3,
-    status: 'active',
-    createdAt: '2024-04-02 09:30:00',
-  },
-  {
-    id: 4,
-    logo: '/placeholder.svg?height=48&width=48',
-    name: '汝窑',
-    englishName: 'RUYAO',
-    code: 'RY004',
-    origin: '河南宝丰',
-    owner: '汝州汝窑瓷业',
-    goodsCount: 42,
-    sort: 4,
-    status: 'active',
-    createdAt: '2024-04-15 11:45:00',
-  },
-  {
-    id: 5,
-    logo: '/placeholder.svg?height=48&width=48',
-    name: '紫砂堂',
-    englishName: 'ZISHA',
-    code: 'ZS005',
-    origin: '江苏宜兴',
-    owner: '宜兴紫砂工艺厂',
-    goodsCount: 73,
-    sort: 5,
-    status: 'active',
-    createdAt: '2024-05-08 16:20:00',
-  },
-  {
-    id: 6,
-    logo: '/placeholder.svg?height=48&width=48',
-    name: '德化白瓷',
-    englishName: 'DEHUA',
-    code: 'DH006',
-    origin: '福建德化',
-    owner: '德化陶瓷集团',
-    goodsCount: 38,
-    sort: 6,
-    status: 'inactive',
-    createdAt: '2024-06-01 13:10:00',
-  },
-]
-
 const brandList = ref<Brand[]>([])
+const loadError = ref('')
 
 async function loadList() {
   loading.value = true
+  loadError.value = ''
   try {
     const res: any = await brandApi.list({
       keyword: filter.keyword,
@@ -286,10 +212,10 @@ async function loadList() {
     const rows = (res?.list ?? []) as Brand[]
     brandList.value = rows
     pagination.total = res?.total ?? rows.length
-  } catch (err) {
-    // 后端未就绪时使用种子数据兜底，保证前端可演示
-    brandList.value = fallbackBrands
-    pagination.total = fallbackBrands.length
+  } catch (err: any) {
+    loadError.value = err?.message || '加载失败，后端服务不可用'
+    brandList.value = []
+    pagination.total = 0
   } finally {
     loading.value = false
   }

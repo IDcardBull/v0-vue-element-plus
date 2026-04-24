@@ -10,6 +10,13 @@
       </div>
     </div>
 
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
+      <template #default>
+        <span>后端服务不可用。</span>
+        <el-button type="danger" size="small" link @click="loadWarnings">点击重试</el-button>
+      </template>
+    </el-alert>
+
     <div class="stat-row">
       <div class="stat-card red">
         <div class="stat-label">已缺货 SKU</div>
@@ -138,101 +145,29 @@ const filter = reactive({
   keyword: '',
 })
 
-const list = ref<WarningItem[]>([
-  {
-    id: 1,
-    sku: 'YM-ZSHU-004-XS',
-    productName: '紫砂西施壶（原矿朱泥）',
-    spec: '200ml / 小号',
-    image: '/placeholder.svg?height=40&width=40',
-    warehouseName: '主仓（景德镇）',
-    available: 0,
-    warningLine: 20,
-    sales30: 45,
-    leadTime: 15,
-  },
-  {
-    id: 2,
-    sku: 'YM-RYZRB-003',
-    productName: '汝窑主人杯（天青釉）',
-    spec: '单杯 80ml',
-    image: '/placeholder.svg?height=40&width=40',
-    warehouseName: '华东仓（上海）',
-    available: 8,
-    warningLine: 30,
-    sales30: 120,
-    leadTime: 10,
-  },
-  {
-    id: 3,
-    sku: 'YM-FSGJ-008',
-    productName: '仿宋官窑茶叶罐',
-    spec: '中号 / 开片釉',
-    image: '/placeholder.svg?height=40&width=40',
-    warehouseName: '主仓（景德镇）',
-    available: 15,
-    warningLine: 25,
-    sales30: 30,
-    leadTime: 12,
-  },
-  {
-    id: 4,
-    sku: 'YM-YZHP-002-W',
-    productName: '羊脂玉白瓷花瓶',
-    spec: '30cm 高 / 白色',
-    image: '/placeholder.svg?height=40&width=40',
-    warehouseName: '主仓（景德镇）',
-    available: 23,
-    warningLine: 30,
-    sales30: 60,
-    leadTime: 14,
-  },
-  {
-    id: 5,
-    sku: 'YM-DHLP-009',
-    productName: '德化白瓷观音莲花碗',
-    spec: '直径 12cm',
-    image: '/placeholder.svg?height=40&width=40',
-    warehouseName: '华南仓（广州）',
-    available: 0,
-    warningLine: 40,
-    sales30: 80,
-    leadTime: 20,
-  },
-  {
-    id: 6,
-    sku: 'YM-GZCB-010',
-    productName: '官窑仿古茶杯',
-    spec: '50ml 单杯',
-    image: '/placeholder.svg?height=40&width=40',
-    warehouseName: '华东仓（上海）',
-    available: 5,
-    warningLine: 50,
-    sales30: 150,
-    leadTime: 8,
-  },
-])
+const list = ref<WarningItem[]>([])
+const loadError = ref('')
 
 async function loadWarnings() {
+  loadError.value = ''
   try {
     const res: any = await inventoryApi.warnings({})
     const rows = (res?.list ?? res ?? []) as any[]
-    if (Array.isArray(rows) && rows.length) {
-      list.value = rows.map((r: any, i: number) => ({
-        id: r.id ?? i + 1,
-        sku: r.sku?.code || r.skuCode || '',
-        productName: r.sku?.product?.name || r.productName || '',
-        spec: r.sku?.specs || r.spec || '',
-        image: r.sku?.product?.mainImage || '/placeholder.svg?height=40&width=40',
-        warehouseName: r.warehouse?.name || r.warehouseName || '',
-        available: Number(r.available ?? 0),
-        warningLine: Number(r.warningLine ?? r.safetyStock ?? 20),
-        sales30: Number(r.sales30 ?? 0),
-        leadTime: Number(r.leadTime ?? 10),
-      })) as any
-    }
-  } catch {
-    // 保留 mock
+    list.value = (Array.isArray(rows) ? rows : []).map((r: any, i: number) => ({
+      id: r.id ?? i + 1,
+      sku: r.sku?.code || r.skuCode || '',
+      productName: r.sku?.product?.name || r.productName || '',
+      spec: r.sku?.specs || r.spec || '',
+      image: r.sku?.product?.mainImage || '/placeholder.svg?height=40&width=40',
+      warehouseName: r.warehouse?.name || r.warehouseName || '',
+      available: Number(r.available ?? 0),
+      warningLine: Number(r.warningLine ?? r.safetyStock ?? 20),
+      sales30: Number(r.sales30 ?? 0),
+      leadTime: Number(r.leadTime ?? 10),
+    })) as any
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    list.value = []
   }
 }
 

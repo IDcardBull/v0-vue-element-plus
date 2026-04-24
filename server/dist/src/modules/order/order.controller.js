@@ -43,19 +43,41 @@ __decorate([
 class ShipDto {
 }
 __decorate([
-    (0, class_validator_1.IsNotEmpty)(),
+    (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
 ], ShipDto.prototype, "company", void 0);
 __decorate([
-    (0, class_validator_1.IsNotEmpty)(),
+    (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
 ], ShipDto.prototype, "trackingNo", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], ShipDto.prototype, "logisticsCompany", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], ShipDto.prototype, "logisticsNo", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], ShipDto.prototype, "remark", void 0);
 class CloseDto {
 }
 __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
 ], CloseDto.prototype, "reason", void 0);
+class RefundDto {
+}
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Number)
+], RefundDto.prototype, "amount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], RefundDto.prototype, "reason", void 0);
 class CreateOrderDto {
 }
 __decorate([
@@ -108,14 +130,33 @@ let OrderController = class OrderController {
     markPaid(id) {
         return this.svc.markPaid(id);
     }
+    markPaidPost(id) {
+        return this.svc.markPaid(id);
+    }
     ship(id, dto, user) {
-        return this.svc.ship(id, dto.company, dto.trackingNo, user.username);
+        const company = dto.company || dto.logisticsCompany || '';
+        const trackingNo = dto.trackingNo || dto.logisticsNo || '';
+        return this.svc.ship(id, company, trackingNo, user.username);
+    }
+    shipPost(id, dto, user) {
+        const company = dto.company || dto.logisticsCompany || '';
+        const trackingNo = dto.trackingNo || dto.logisticsNo || '';
+        return this.svc.ship(id, company, trackingNo, user.username);
     }
     complete(id) {
         return this.svc.complete(id);
     }
+    completePost(id) {
+        return this.svc.complete(id);
+    }
     close(id, dto) {
         return this.svc.close(id, dto.reason);
+    }
+    closePost(id, dto) {
+        return this.svc.close(id, dto.reason);
+    }
+    refund(id, dto) {
+        return this.svc.refund(id, dto.amount, dto.reason);
     }
     // 客户端入口 —— 小程序/H5 下单走这里
     clientCreate(user, dto) {
@@ -154,6 +195,13 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], OrderController.prototype, "markPaid", null);
 __decorate([
+    (0, common_1.Post)(':id/mark-paid'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], OrderController.prototype, "markPaidPost", null);
+__decorate([
     (0, common_1.Patch)(':id/ship'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Body)()),
@@ -163,12 +211,28 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], OrderController.prototype, "ship", null);
 __decorate([
+    (0, common_1.Post)(':id/ship'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, ShipDto, Object]),
+    __metadata("design:returntype", void 0)
+], OrderController.prototype, "shipPost", null);
+__decorate([
     (0, common_1.Patch)(':id/complete'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Number]),
     __metadata("design:returntype", void 0)
 ], OrderController.prototype, "complete", null);
+__decorate([
+    (0, common_1.Post)(':id/complete'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], OrderController.prototype, "completePost", null);
 __decorate([
     (0, common_1.Patch)(':id/close'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
@@ -178,6 +242,22 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], OrderController.prototype, "close", null);
 __decorate([
+    (0, common_1.Post)(':id/close'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, CloseDto]),
+    __metadata("design:returntype", void 0)
+], OrderController.prototype, "closePost", null);
+__decorate([
+    (0, common_1.Post)(':id/refund'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, RefundDto]),
+    __metadata("design:returntype", void 0)
+], OrderController.prototype, "refund", null);
+__decorate([
     (0, common_1.Post)('client/create'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Body)()),
@@ -186,7 +266,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], OrderController.prototype, "clientCreate", null);
 exports.OrderController = OrderController = __decorate([
-    (0, common_1.Controller)('admin/order'),
+    (0, common_1.Controller)('admin/orders'),
     __metadata("design:paramtypes", [order_service_1.OrderService])
 ], OrderController);
 //# sourceMappingURL=order.controller.js.map

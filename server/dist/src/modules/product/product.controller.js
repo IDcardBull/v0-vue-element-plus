@@ -150,6 +150,28 @@ let ProductController = class ProductController {
     update(id, dto) {
         return this.svc.update(id, dto);
     }
+    patch(id, dto) {
+        return this.svc.update(id, dto);
+    }
+    // 前端：PATCH /admin/products/:id/status  body: { status: 'on_sale' | 'off_sale' }
+    setStatus(id, body) {
+        if (body?.status !== undefined) {
+            const val = typeof body.status === 'number'
+                ? body.status
+                : body.status === 'on_sale'
+                    ? 1
+                    : 0;
+            return this.svc.setStatus(id, val);
+        }
+        return this.svc.toggleListing(id);
+    }
+    // 前端：PATCH /admin/products/:id/channel  body: { channel: 'retail' | 'wholesale', enabled: boolean }
+    setChannel(id, body) {
+        if (body.channel === 'retail')
+            return this.svc.setRetail(id, !!body.enabled);
+        return this.svc.setWholesale(id, !!body.enabled);
+    }
+    // 保留原有的切换接口，便于以后直接调用
     toggleListing(id) {
         return this.svc.toggleListing(id);
     }
@@ -197,6 +219,30 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], ProductController.prototype, "update", null);
 __decorate([
+    (0, common_1.Patch)(':id'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, ProductDto]),
+    __metadata("design:returntype", void 0)
+], ProductController.prototype, "patch", null);
+__decorate([
+    (0, common_1.Patch)(':id/status'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:returntype", void 0)
+], ProductController.prototype, "setStatus", null);
+__decorate([
+    (0, common_1.Patch)(':id/channel'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:returntype", void 0)
+], ProductController.prototype, "setChannel", null);
+__decorate([
     (0, common_1.Patch)(':id/toggle-listing'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __metadata("design:type", Function),
@@ -232,7 +278,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], ProductController.prototype, "remove", null);
 exports.ProductController = ProductController = __decorate([
-    (0, common_1.Controller)('admin/product'),
+    (0, common_1.Controller)('admin/products'),
     __metadata("design:paramtypes", [product_service_1.ProductService])
 ], ProductController);
 //# sourceMappingURL=product.controller.js.map

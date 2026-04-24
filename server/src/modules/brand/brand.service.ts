@@ -61,11 +61,12 @@ export class BrandService {
     return this.prisma.brand.delete({ where: { id } })
   }
 
-  async toggleStatus(id: number) {
+  async toggleStatus(id: number, next?: number) {
     const b = await this.findById(id)
+    const target = next === undefined ? (b.status === 1 ? 0 : 1) : next
     return this.prisma.brand.update({
       where: { id },
-      data: { status: b.status === 1 ? 0 : 1 },
+      data: { status: target },
     })
   }
 }
