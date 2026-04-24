@@ -4,6 +4,12 @@ const Layout = () => import('@/layout/Layout.vue')
 
 const routes: RouteRecordRaw[] = [
   {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/Login.vue'),
+    meta: { title: '登录', public: true, hidden: true },
+  },
+  {
     path: '/',
     component: Layout,
     redirect: '/dashboard',
@@ -167,6 +173,21 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHashHistory(),
   routes,
+})
+
+// ========= 全局守卫：未登录跳转到 /login =========
+router.beforeEach((to, _from, next) => {
+  const token = localStorage.getItem('admin_token')
+  const isPublic = to.meta?.public === true
+  if (!token && !isPublic) {
+    next({ path: '/login', query: { redirect: to.fullPath } })
+    return
+  }
+  if (token && to.path === '/login') {
+    next({ path: '/dashboard' })
+    return
+  }
+  next()
 })
 
 export default router

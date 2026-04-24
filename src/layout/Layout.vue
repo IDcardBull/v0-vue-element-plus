@@ -3,9 +3,13 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { menuData, type MenuItem } from './menu'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+
+const currentUser = computed(() => authStore.user)
 
 const isCollapse = ref(false)
 
@@ -53,8 +57,9 @@ async function handleLogout() {
       cancelButtonText: '取消',
       type: 'warning',
     })
+    await authStore.logout()
     ElMessage.success('已退出登录')
-    // 实际项目中可清除 token 并跳转登录页
+    router.push('/login')
   } catch {
     // cancel
   }
@@ -164,7 +169,7 @@ const _ = ref<MenuItem | null>(null)
               <el-avatar :size="32" shape="circle">
                 <el-icon><User /></el-icon>
               </el-avatar>
-              <span class="user-name">超级管理员</span>
+              <span class="user-name">{{ currentUser?.realName || currentUser?.username || '管理员' }}</span>
               <el-icon><CaretBottom /></el-icon>
             </div>
             <template #dropdown>
