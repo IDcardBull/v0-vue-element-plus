@@ -336,6 +336,10 @@ function normalizeImageList(images: unknown): string[] {
   return Array.isArray(images) ? images.filter((item): item is string => typeof item === 'string' && !!item) : []
 }
 
+function normalizeSkuImageUrl(sku: any): string {
+  return sku?.image || sku?.skuImage || sku?.sku_image || sku?.imageUrl || sku?.image_url || ''
+}
+
 function rebuildSpecsFromSkus(skus: any[]) {
   const specsList = skus.map((sku) => sku.specs || {}).filter((specs) => Object.keys(specs).length > 0)
   if (specsList.length === 0) return
@@ -371,7 +375,7 @@ function fillSkuList(skus: any[]) {
       key: Object.values(combo).join('|') || `sku-${sku.id || index}`,
       combo,
       sku_code: sku.code || '',
-      sku_image: sku.image || '',
+      sku_image: normalizeSkuImageUrl(sku),
       retail_price: Number(sku.retailPrice ?? form.retail_price ?? 0),
       wholesale_price: sku.memberPrice === null || sku.memberPrice === undefined
         ? null
@@ -464,6 +468,8 @@ function buildProductPayload(status: 'on' | 'draft') {
         code: sku.sku_code || `${form.code}-SKU-${index + 1}`,
         specs: sku.combo,
         image: sku.sku_image || form.main_image || undefined,
+        skuImage: sku.sku_image || form.main_image || undefined,
+        sku_image: sku.sku_image || form.main_image || undefined,
         retailPrice: Number(sku.retail_price || form.retail_price || 0),
         memberPrice: sku.wholesale_price === null
           ? (form.market_price === null ? undefined : Number(form.market_price))

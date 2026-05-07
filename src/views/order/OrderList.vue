@@ -89,6 +89,13 @@ const statusMeta: Record<OrderStatus, { label: string; type: 'info' | 'warning' 
   refund: { label: '售后中', type: 'danger' },
   closed: { label: '已关闭', type: 'info' },
 }
+function getOrderStatusMeta(row: Order) {
+  if (row.channel === 'wholesale' && row.status === 'pending_pay') {
+    return { label: '待客服确认', type: 'warning' as const }
+  }
+  return statusMeta[row.status as OrderStatus]
+}
+
 const channelMeta: Record<OrderChannel, { label: string; color: string }> = {
   retail: { label: '零售', color: '#2d8cf0' },
   wholesale: { label: '批发', color: '#c8a96a' },
@@ -692,8 +699,8 @@ function exportData() {
 
         <el-table-column label="状态" width="110" align="center">
           <template #default="{ row }">
-            <el-tag :type="statusMeta[row.status as OrderStatus].type" effect="light">
-              {{ statusMeta[row.status as OrderStatus].label }}
+            <el-tag :type="getOrderStatusMeta(row).type" effect="light">
+              {{ getOrderStatusMeta(row).label }}
             </el-tag>
           </template>
         </el-table-column>

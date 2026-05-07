@@ -85,7 +85,7 @@ export class ClientOrderController {
       items: dto.items,
       addressId: dto.addressId,
       remark: dto.remark,
-      payMethod: dto.payMethod || 'wechat',
+      payMethod: dto.payMethod || (channel === 'wholesale' ? 'offline' : 'wechat'),
       useCredit: !!dto.useCredit,
     })
   }

@@ -2,6 +2,10 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '@/common/prisma.service'
 import { PageResult } from '@/common/dto/pagination.dto'
 
+function normalizeSkuImage(s: any) {
+  return s?.image || s?.skuImage || s?.sku_image || s?.imageUrl || s?.image_url || undefined
+}
+
 interface ProductQuery {
   keyword?: string
   categoryId?: number
@@ -129,7 +133,7 @@ export class ProductService {
               create: skus.map((s: any) => ({
                 code: s.code,
                 specs: s.specs || {},
-                image: s.image,
+                image: normalizeSkuImage(s),
                 retailPrice: s.retailPrice || 0,
                 memberPrice: s.memberPrice,
                 costPrice: s.costPrice,
@@ -160,7 +164,7 @@ export class ProductService {
           const skuData = {
             code: s.code,
             specs: s.specs || {},
-            image: s.image,
+            image: normalizeSkuImage(s),
             retailPrice: s.retailPrice || 0,
             memberPrice: s.memberPrice,
             costPrice: s.costPrice,
