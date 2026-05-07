@@ -133,8 +133,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import type { ElTree } from 'element-plus'
 import { Plus, Edit, Check } from '@element-plus/icons-vue'
 import { roleApi } from '@/api/role'
 
@@ -144,11 +145,16 @@ interface Role {
   name: string
   accounts: number
   desc: string
+  menuPerms: string[]
+  dataPerms: any
+  apiPerms: any
+  status: number
 }
 
 const roleList = ref<Role[]>([])
 const currentRole = ref<Role | null>(null)
 const loadError = ref('')
+const menuTreeRef = ref<InstanceType<typeof ElTree>>()
 
 async function loadRoles() {
   loadError.value = ''
@@ -159,10 +165,15 @@ async function loadRoles() {
       id: r.id ?? i + 1,
       code: r.code || '',
       name: r.name || '',
-      accounts: Number(r.accountCount ?? r.accounts ?? 0),
+      accounts: Number(r._count?.users ?? r.accountCount ?? r.accounts ?? 0),
       desc: r.description || r.desc || '',
-    })) as any
+      menuPerms: Array.isArray(r.menuPerms) ? r.menuPerms : [],
+      dataPerms: r.dataPerms || {},
+      apiPerms: r.apiPerms || [],
+      status: Number(r.status ?? 1),
+    }))
     currentRole.value = roleList.value[0] ?? null
+    if (currentRole.value) applyRolePermissions(currentRole.value)
   } catch (e: any) {
     loadError.value = e?.message || '后端服务不可用'
     roleList.value = []
@@ -245,29 +256,87 @@ const actionList = reactive([
   { module: '系统管理', action: '创建账号', enabled: false },
 ])
 
+function actionKey(item: { module: string; action: string }) {
+  return `${item.module}:${item.action}`
+}
+
+function applyRolePermissions(role: Role) {
+  checkedMenus.value = role.menuPerms || []
+  const data = role.dataPerms || {}
+  dataScope.order = data.order || data.scope || 'all'
+  dataScope.customer = data.customer || data.scope || 'all'
+  dataScope.warehouses = Array.isArray(data.warehouses) ? data.warehouses : ['main', 'east', 'south']
+  dataScope.canExport = data.canExport !== false
+  const enabledActions = Array.isArray(role.apiPerms) ? role.apiPerms : []
+  actionList.forEach((item) => {
+    item.enabled = enabledActions.includes(actionKey(item))
+  })
+  nextTick(() => {
+    menuTreeRef.value?.setCheckedKeys(checkedMenus.value)
+  })
+}
+
 function selectRole(r: Role) {
   currentRole.value = r
+  applyRolePermissions(r)
 }
 
-function handleCreate() {
-  const newRole: Role = {
-    id: Date.now(),
-    code: `custom_${Date.now().toString().slice(-4)}`,
-    name: '新角色',
-    accounts: 0,
-    desc: '待完善',
+async function handleCreate() {
+  try {
+    const name = await ElMessageBox.prompt('请输入角色名称', '新增角色', {
+      confirmButtonText: '创建',
+      cancelButtonText: '取消',
+      inputPattern: /^.{2,20}$/,
+      inputErrorMessage: '角色名称需为 2-20 个字符',
+    })
+    const code = `custom_${Date.now().toString().slice(-6)}`
+    await roleApi.create({ name: name.value, code, description: '', permissions: [], status: 1 })
+    ElMessage.success('角色已创建')
+    await loadRoles()
+  } catch {
+    // 用户取消
   }
-  roleList.value.push(newRole)
-  currentRole.value = newRole
-  ElMessage.success('新角色已创建，请完善名称与权限')
 }
 
-function handleEditRole() {
-  ElMessage.info('打开角色基础信息编辑（占位）')
+async function handleEditRole() {
+  if (!currentRole.value) return
+  try {
+    const name = await ElMessageBox.prompt('请输入角色名称', '编辑角色', {
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputValue: currentRole.value.name,
+      inputPattern: /^.{2,20}$/,
+      inputErrorMessage: '角色名称需为 2-20 个字符',
+    })
+    await roleApi.update(currentRole.value.id, {
+      name: name.value,
+      description: currentRole.value.desc,
+      status: currentRole.value.status,
+    })
+    ElMessage.success('角色信息已更新')
+    await loadRoles()
+  } catch {
+    // 用户取消
+  }
 }
 
-function handleSavePerm() {
-  ElMessage.success(`角色「${currentRole.value?.name}」的权限配置已保存`)
+async function handleSavePerm() {
+  if (!currentRole.value) return
+  const permissions = menuTreeRef.value?.getCheckedKeys(false).map(String) || checkedMenus.value
+  const apiPerms = actionList.filter((item) => item.enabled).map(actionKey)
+  try {
+    await roleApi.update(currentRole.value.id, {
+      menuPerms: permissions,
+      dataPerms: { ...dataScope },
+      apiPerms,
+    })
+    currentRole.value.menuPerms = permissions
+    currentRole.value.dataPerms = { ...dataScope }
+    currentRole.value.apiPerms = apiPerms
+    ElMessage.success(`角色「${currentRole.value.name}」的权限配置已保存`)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '保存权限失败')
+  }
 }
 </script>
 

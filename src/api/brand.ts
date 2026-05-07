@@ -1,6 +1,6 @@
 import request from './request'
 
-export function fetchBrands(params: { page?: number; pageSize?: number; keyword?: string; status?: string }) {
+export function fetchBrands(params: { page?: number; pageSize?: number; keyword?: string; status?: number | string }) {
   return request.get<any, { list: any[]; total: number; page: number; pageSize: number }>(
     '/admin/brands',
     { params },
@@ -23,7 +23,7 @@ export function deleteBrand(id: number) {
   return request.delete<any, any>(`/admin/brands/${id}`)
 }
 
-export function toggleBrandStatus(id: number, status: 'active' | 'disabled') {
+export function toggleBrandStatus(id: number, status: 'active' | 'disabled' | number) {
   return request.patch<any, any>(`/admin/brands/${id}/status`, { status })
 }
 

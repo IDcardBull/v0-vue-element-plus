@@ -1,4 +1,4 @@
-# 央茗陶瓷 · 一库多端系统
+# 央皿陶瓷 · 一库多端系统
 
 Vue 3 + TypeScript + Element Plus 管理后台，NestJS + Prisma + MySQL 后端，面向微信小程序（零售端/批发端）、H5、PC 管理端三端数据互通。
 
@@ -205,4 +205,4 @@ docker compose logs -f --tail=100 server       # 实时日志
 
 ---
 
-MIT © 2026 央茗陶瓷
+MIT © 2026 央皿陶瓷

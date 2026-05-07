@@ -8,7 +8,7 @@ import { ClientCatalogController } from './client-catalog.controller'
 import { ClientUserController } from './client-user.controller'
 import { ClientAddressController } from './client-address.controller'
 import { ClientAddressService } from './client-address.service'
-import { ClientOrderController } from './client-order.controller'
+import { ClientOrderController, ClientOrderCompatController } from './client-order.controller'
 import { ClientPayController } from './client-pay.controller'
 import { WechatPayService } from './wechat-pay.service'
 
@@ -23,6 +23,7 @@ import { WechatPayService } from './wechat-pay.service'
     ClientUserController,
     ClientAddressController,
     ClientOrderController,
+    ClientOrderCompatController,
     ClientPayController,
   ],
   providers: [ClientAddressService, WechatPayService],

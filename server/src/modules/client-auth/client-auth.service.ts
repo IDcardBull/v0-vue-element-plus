@@ -21,13 +21,31 @@ export class ClientAuthService {
 
     const appid = this.config.get<string>('WX_APPID')
     const secret = this.config.get<string>('WX_SECRET')
-    if (!appid || !secret) throw new UnauthorizedException('微信小程序未配置')
+    const devFallbackEnabled = this.config.get<string>('WX_LOGIN_DEV_FALLBACK') === 'true'
 
-    const url = `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${code}&grant_type=authorization_code`
-    const { data } = await axios.get(url, { timeout: 5000 })
-    if (data.errcode) throw new UnauthorizedException(`微信登录失败：${data.errmsg}`)
+    if (!appid || !secret) {
+      if (devFallbackEnabled) return this.devMiniLogin('missing-config')
+      throw new UnauthorizedException('微信小程序未配置')
+    }
 
-    const { openid, unionid } = data
+    try {
+      const url = `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${code}&grant_type=authorization_code`
+      const { data } = await axios.get(url, { timeout: 5000 })
+      if (data.errcode) {
+        if (devFallbackEnabled) return this.devMiniLogin(`wechat-${data.errcode}`)
+        throw new UnauthorizedException(`微信登录失败：${data.errmsg}`)
+      }
+
+      const { openid, unionid } = data
+      return this.loginByOpenid(openid, unionid || null)
+    } catch (error: any) {
+      if (error instanceof UnauthorizedException || error instanceof BadRequestException) throw error
+      if (devFallbackEnabled) return this.devMiniLogin('request-failed')
+      throw new UnauthorizedException(error?.message || '微信登录失败')
+    }
+  }
+
+  private async loginByOpenid(openid: string, unionid?: string | null) {
     let user = await this.prisma.user.findUnique({ where: { openid } })
     if (!user) {
       user = await this.prisma.user.create({
@@ -40,13 +58,23 @@ export class ClientAuthService {
       })
     }
 
-    const token = await this.jwt.signAsync({
+    const token = await this.signClientToken(user)
+    return { token, user: this.sanitize(user) }
+  }
+
+  private async devMiniLogin(reason: string) {
+    const openid = `dev_${this.config.get<string>('WX_APPID') || 'mini'}_local`
+    const result = await this.loginByOpenid(openid)
+    return { ...result, dev: true, reason }
+  }
+
+  private signClientToken(user: any) {
+    return this.jwt.signAsync({
       sub: user.id,
       username: user.phone || user.openid,
       userType: 'client',
       role: user.role,
     })
-    return { token, user: this.sanitize(user) }
   }
 
   /**

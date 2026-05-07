@@ -6,7 +6,7 @@
         <p class="page-subtitle">完整的库存变动流水，支持按类型、单号、经办人检索</p>
       </div>
       <div class="header-actions">
-        <el-button :icon="Download">导出 Excel</el-button>
+        <el-button :icon="Download" @click="exportRecords">导出 Excel</el-button>
         <el-button type="primary" :icon="Plus">手动新增单据</el-button>
       </div>
     </div>
@@ -22,29 +22,15 @@
       <el-form inline :model="filter" class="filter-form">
         <el-form-item label="业务类型">
           <el-select v-model="filter.type" placeholder="全部" clearable style="width: 140px">
-            <el-option label="采购入库" value="purchase" />
-            <el-option label="销售出库" value="sale" />
-            <el-option label="调拨" value="transfer" />
-            <el-option label="盘盈" value="surplus" />
-            <el-option label="盘亏" value="loss" />
-            <el-option label="退货入库" value="return" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="方向">
-          <el-select v-model="filter.direction" placeholder="全部" clearable style="width: 120px">
             <el-option label="入库" value="in" />
             <el-option label="出库" value="out" />
+            <el-option label="调拨" value="transfer" />
+            <el-option label="盘点" value="inventory" />
+            <el-option label="退货入库" value="return" />
           </el-select>
         </el-form-item>
         <el-form-item label="单据号">
           <el-input v-model="filter.orderNo" placeholder="单据号 / SKU" clearable style="width: 200px" />
-        </el-form-item>
-        <el-form-item label="仓库">
-          <el-select v-model="filter.warehouse" placeholder="全部" clearable style="width: 160px">
-            <el-option label="主仓（景德镇）" value="main" />
-            <el-option label="华东仓（上海）" value="east" />
-            <el-option label="华南仓（广州）" value="south" />
-          </el-select>
         </el-form-item>
         <el-form-item label="时间范围">
           <el-date-picker
@@ -57,14 +43,14 @@
           />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :icon="Search">查询</el-button>
+          <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
           <el-button :icon="RefreshLeft" @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card class="content-card" shadow="never">
-      <el-table :data="recordList" stripe border>
+      <el-table :data="recordList" stripe border v-loading="loading">
         <el-table-column label="单据号" width="200">
           <template #default="{ row }">
             <div class="order-no">{{ row.orderNo }}</div>
@@ -91,7 +77,6 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="仓库" prop="warehouseName" width="140" />
         <el-table-column label="数量" width="100" align="right">
           <template #default="{ row }">
             <span :class="row.direction === 'in' ? 'qty-in' : 'qty-out'">
@@ -129,6 +114,8 @@
           :page-sizes="[10, 20, 50]"
           layout="total, sizes, prev, pager, next, jumper"
           background
+          @current-change="loadRecords"
+          @size-change="handleSizeChange"
         />
       </div>
     </el-card>
@@ -159,66 +146,134 @@ interface StockItem {
 }
 
 const typeMap: Record<string, string> = {
+  in: '入库',
+  out: '出库',
+  transfer: '调拨',
+  inventory: '盘点',
+  return: '退货入库',
   purchase: '采购入库',
   sale: '销售出库',
-  transfer: '调拨',
   surplus: '盘盈',
   loss: '盘亏',
-  return: '退货入库',
 }
 
 const filter = reactive({
   type: '',
-  direction: '',
   orderNo: '',
-  warehouse: '',
   dateRange: [] as string[],
 })
 
 const pagination = reactive({
   page: 1,
   size: 10,
-  total: 8,
+  total: 0,
 })
 
 const recordList = ref<StockItem[]>([])
+const loading = ref(false)
 const loadError = ref('')
 
 async function loadRecords() {
+  loading.value = true
   loadError.value = ''
   try {
-    const res: any = await inventoryApi.records({ page: 1, pageSize: 100 })
+    const params: any = {
+      page: pagination.page,
+      pageSize: pagination.size,
+      keyword: filter.orderNo || undefined,
+      dateFrom: filter.dateRange?.[0] || undefined,
+      dateTo: filter.dateRange?.[1] || undefined,
+    }
+    if (filter.type) params.type = filter.type
+    const res: any = await inventoryApi.records(params)
     const rows = (res?.list ?? []) as any[]
     recordList.value = rows.map((r: any, i: number) => ({
       id: r.id ?? i + 1,
       orderNo: r.orderNo || r.code || '',
-      direction: r.direction || (r.type === 'in' || r.type === 'purchase' || r.type === 'return' || r.type === 'surplus' ? 'in' : 'out'),
-      type: r.type || 'purchase',
+      direction: r.type === 'in' || r.type === 'return' ? 'in' : 'out',
+      type: r.type || 'in',
       warehouseName: r.warehouse?.name || r.warehouseName || '',
       sku: r.sku?.code || r.skuCode || '',
       productName: r.sku?.product?.name || r.productName || '',
       qty: Number(r.qty ?? 0),
-      beforeQty: Number(r.beforeQty ?? 0),
-      afterQty: Number(r.afterQty ?? 0),
-      refOrder: r.refOrder || '',
+      beforeQty: Number(r.beforeOnHand ?? r.beforeQty ?? 0),
+      afterQty: Number(r.afterOnHand ?? r.afterQty ?? 0),
+      refOrder: r.relatedType && r.relatedId ? `${r.relatedType}:${r.relatedId}` : '',
       operator: r.operator || r.createdBy?.realName || '',
       remark: r.remark || '',
       createdAt: r.createdAt || '',
     })) as any
+    pagination.total = Number(res?.total ?? recordList.value.length)
   } catch (e: any) {
     loadError.value = e?.message || '后端服务不可用'
     recordList.value = []
+    pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 
-onMounted(loadRecords)
+onMounted(async () => {
+  await loadRecords()
+})
+
+function handleSearch() {
+  pagination.page = 1
+  loadRecords()
+}
+
+function handleSizeChange() {
+  pagination.page = 1
+  loadRecords()
+}
 
 function handleReset() {
   filter.type = ''
-  filter.direction = ''
   filter.orderNo = ''
-  filter.warehouse = ''
   filter.dateRange = []
+  pagination.page = 1
+  loadRecords()
+}
+
+function escapeCsvCell(value: unknown) {
+  const text = String(value ?? '')
+  if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`
+  return text
+}
+
+function downloadCsv(filename: string, header: string[], rows: Array<Array<unknown>>) {
+  const csv = [header, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\r\n')
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportRecords() {
+  const rows = recordList.value.map((row) => [
+    row.orderNo,
+    row.createdAt,
+    row.direction === 'in' ? '入库' : '出库',
+    typeMap[row.type] || row.type,
+    row.sku,
+    row.productName,
+    row.warehouseName,
+    row.qty,
+    row.beforeQty,
+    row.afterQty,
+    row.refOrder || '',
+    row.operator,
+    row.remark,
+  ])
+  downloadCsv(
+    `出入库记录-${new Date().toISOString().slice(0, 10)}.csv`,
+    ['单据号', '时间', '方向', '业务类型', 'SKU', '商品名', '仓库', '数量', '变动前', '变动后', '关联单据', '经办人', '备注'],
+    rows,
+  )
+  ElMessage.success(`已导出 ${rows.length} 条记录`)
 }
 
 function handleDetail(row: StockItem) {

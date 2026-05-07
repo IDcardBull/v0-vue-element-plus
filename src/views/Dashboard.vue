@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { fetchOverview, fetchTopProducts } from '@/api/dashboard'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import * as echarts from 'echarts'
+import { fetchOverview, fetchTopProducts, fetchSalesTrend } from '@/api/dashboard'
 
 interface StatCard {
   label: string
@@ -17,6 +18,10 @@ const stats = ref<StatCard[]>([
 ])
 
 const topProducts = ref<Array<{ name: string; quantity: number; amount: number }>>([])
+const trendDays = ref<7 | 30 | 90>(30)
+const trendPoints = ref<Array<{ date: string; retail: number; wholesale: number }>>([])
+const chartRef = ref<HTMLDivElement | null>(null)
+let chart: echarts.ECharts | null = null
 const loading = ref(true)
 const errorMsg = ref('')
 
@@ -24,11 +29,87 @@ function formatMoney(n: number) {
   return '¥' + Math.round(n).toLocaleString('zh-CN')
 }
 
+function renderTrendChart() {
+  if (!chartRef.value) return
+  if (!chart) chart = echarts.init(chartRef.value)
+
+  const xData = trendPoints.value.map((p) => p.date.slice(5))
+  const retail = trendPoints.value.map((p) => Number(p.retail || 0))
+  const wholesale = trendPoints.value.map((p) => Number(p.wholesale || 0))
+
+  chart.setOption({
+    color: ['#2d8cf0', '#c8a96a'],
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (v: number) => `¥${Math.round(Number(v || 0)).toLocaleString('zh-CN')}`,
+    },
+    legend: {
+      data: ['零售', '批发'],
+      top: 8,
+      right: 12,
+    },
+    grid: { left: 48, right: 24, top: 64, bottom: 30 },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: xData,
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: {
+        formatter: (v: number) => `¥${Math.round(v)}`,
+      },
+    },
+    series: [
+      {
+        name: '零售',
+        type: 'line',
+        smooth: true,
+        showSymbol: false,
+        areaStyle: { opacity: 0.12 },
+        data: retail,
+      },
+      {
+        name: '批发',
+        type: 'line',
+        smooth: true,
+        showSymbol: false,
+        areaStyle: { opacity: 0.12 },
+        data: wholesale,
+      },
+    ],
+  })
+}
+
+function handleResize() {
+  chart?.resize()
+}
+
+async function onTrendDaysChange() {
+  try {
+    await loadTrend()
+  } catch (e: any) {
+    errorMsg.value = e?.message || '销售趋势加载失败'
+    trendPoints.value = []
+    chart?.clear()
+  }
+}
+
+async function loadTrend() {
+  const trend = await fetchSalesTrend(trendDays.value)
+  trendPoints.value = Array.isArray(trend) ? trend : []
+  await nextTick()
+  renderTrendChart()
+}
+
 async function loadData() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const [overview, top] = await Promise.all([fetchOverview(), fetchTopProducts(5)])
+    const [overview, top] = await Promise.all([
+      fetchOverview(),
+      fetchTopProducts(5),
+    ])
     stats.value = [
       { label: '今日订单数', value: overview.todayOrderCount ?? 0, tone: 'primary', icon: 'ShoppingCart' },
       { label: '今日支付金额', value: formatMoney(overview.todayOrderAmount ?? 0), tone: 'success', icon: 'Money' },
@@ -36,6 +117,7 @@ async function loadData() {
       { label: '待发货订单', value: overview.pendingShipCount ?? 0, tone: 'danger', icon: 'Box' },
     ]
     topProducts.value = Array.isArray(top) ? top : []
+    await loadTrend()
   } catch (e: any) {
     errorMsg.value = e?.message || '后端服务不可用，请检查 NestJS 是否已启动'
     stats.value = [
@@ -45,12 +127,23 @@ async function loadData() {
       { label: '待发货订单', value: 0, tone: 'danger', icon: 'Box' },
     ]
     topProducts.value = []
+    trendPoints.value = []
+    chart?.clear()
   } finally {
     loading.value = false
   }
 }
 
-onMounted(loadData)
+onMounted(async () => {
+  await loadData()
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+  chart?.dispose()
+  chart = null
+})
 </script>
 
 <template>
@@ -86,11 +179,18 @@ onMounted(loadData)
 
     <el-row :gutter="16" class="mt-16">
       <el-col :xs="24" :md="16">
-        <el-card shadow="never" header="销售趋势（近 30 日）">
-          <div class="placeholder-chart">
-            <el-icon :size="48" color="#c8a96a"><DataLine /></el-icon>
-            <p>可接入 ECharts 展示 /admin/dashboard/sales-trend</p>
-          </div>
+        <el-card shadow="never" class="trend-card">
+          <template #header>
+            <div class="trend-head">
+              <span>销售趋势</span>
+              <el-radio-group v-model="trendDays" size="small" @change="onTrendDaysChange">
+                <el-radio-button :value="7">近7日</el-radio-button>
+                <el-radio-button :value="30">近30日</el-radio-button>
+                <el-radio-button :value="90">近90日</el-radio-button>
+              </el-radio-group>
+            </div>
+          </template>
+          <div ref="chartRef" class="trend-chart" />
         </el-card>
       </el-col>
       <el-col :xs="24" :md="8">
@@ -156,15 +256,15 @@ onMounted(loadData)
 .stat-icon.warning { background: #fdf6ec; color: #e6a23c; }
 .stat-icon.danger  { background: #fef0f0; color: #f56c6c; }
 
-.placeholder-chart {
-  height: 280px;
+.trend-head {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--ym-text-secondary);
-  background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
-  border-radius: 6px;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trend-chart {
+  height: 280px;
+  width: 100%;
 }
 </style>

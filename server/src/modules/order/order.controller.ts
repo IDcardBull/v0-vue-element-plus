@@ -61,6 +61,11 @@ export class OrderController {
     return this.svc.findById(id)
   }
 
+  @Get(':id/logistics')
+  logistics(@Param('id', ParseIntPipe) id: number) {
+    return this.svc.getLogistics(id)
+  }
+
   @Patch(':id/mark-paid')
   markPaid(@Param('id', ParseIntPipe) id: number) {
     return this.svc.markPaid(id)

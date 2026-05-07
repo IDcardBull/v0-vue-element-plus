@@ -168,6 +168,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Refresh, Edit, Delete } from '@element-plus/icons-vue'
 import { brandApi } from '@/api/brand'
+import { uploadApi } from '@/api/upload'
 
 interface Brand {
   id: number
@@ -205,12 +206,25 @@ async function loadList() {
   try {
     const res: any = await brandApi.list({
       keyword: filter.keyword,
-      status: filter.status,
+      status: filter.status === 'active' ? 1 : filter.status === 'inactive' ? 0 : undefined,
       page: pagination.page,
       pageSize: pagination.size,
     })
-    const rows = (res?.list ?? []) as Brand[]
-    brandList.value = rows
+    const rows = (res?.list ?? []) as any[]
+    brandList.value = rows.map((item) => ({
+      id: item.id,
+      logo: item.logo || '',
+      name: item.name || '',
+      englishName: item.englishName || '',
+      code: item.code || '',
+      origin: item.origin || item.country || '',
+      owner: item.owner || '',
+      goodsCount: item.productCount ?? item.goodsCount ?? 0,
+      sort: Number(item.sort || 0),
+      status: item.status === 1 || item.status === 'active' ? 'active' : 'inactive',
+      createdAt: item.createdAt || '',
+      description: item.story || item.description || '',
+    }))
     pagination.total = res?.total ?? rows.length
   } catch (err: any) {
     loadError.value = err?.message || '加载失败，后端服务不可用'
@@ -229,7 +243,7 @@ const formRef = ref<FormInstance>()
 
 const defaultForm = (): Brand => ({
   id: 0,
-  logo: '/placeholder.svg?height=80&width=80',
+  logo: '',
   name: '',
   englishName: '',
   code: '',
@@ -276,7 +290,7 @@ function handleEdit(row: Brand) {
 async function handleToggle(row: Brand) {
   const next = row.status === 'active' ? 'inactive' : 'active'
   try {
-    await brandApi.update(row.id, { status: next })
+    await brandApi.toggleStatus(row.id, next === 'active' ? 'active' : 'disabled')
     row.status = next
     ElMessage.success(`已${next === 'active' ? '启用' : '停用'}品牌：${row.name}`)
   } catch (e: any) {
@@ -297,19 +311,38 @@ async function handleDelete(row: Brand) {
   }
 }
 
-function handleLogoChange(file: any) {
-  form.logo = URL.createObjectURL(file.raw)
+async function handleLogoChange(file: any) {
+  try {
+    const res = await uploadApi.file(file.raw)
+    form.logo = res.url
+    ElMessage.success('LOGO 上传成功')
+  } catch (error: any) {
+    ElMessage.error(error?.message || 'LOGO 上传失败')
+  }
+}
+
+function buildBrandPayload() {
+  return {
+    code: form.code,
+    name: form.name,
+    logo: form.logo || undefined,
+    origin: form.origin || undefined,
+    story: form.description || undefined,
+    sort: Number(form.sort || 0),
+    status: form.status === 'active' ? 1 : 0,
+  }
 }
 
 function handleSubmit() {
   formRef.value?.validate(async (valid) => {
     if (!valid) return
     try {
+      const payload = buildBrandPayload()
       if (formMode.value === 'create') {
-        await brandApi.create({ ...form })
+        await brandApi.create(payload)
         ElMessage.success('品牌创建成功')
       } else {
-        await brandApi.update(form.id, { ...form })
+        await brandApi.update(form.id, payload)
         ElMessage.success('品牌信息已更新')
       }
       drawerVisible.value = false

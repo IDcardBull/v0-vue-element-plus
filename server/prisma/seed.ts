@@ -26,6 +26,8 @@ async function main() {
   await prisma.adminUserRole.deleteMany()
   await prisma.role.deleteMany()
   await prisma.adminUser.deleteMany()
+  await prisma.dictItem.deleteMany()
+  await prisma.dictType.deleteMany()
 
   // 1. 角色
   const [superRole, productMgr, orderMgr] = await Promise.all([
@@ -96,7 +98,31 @@ async function main() {
     },
   })
 
-  // 3. 会员等级
+  // 3. 字典：工艺 / 胎质
+  await prisma.dictType.createMany({
+    data: [
+      { code: 'craft', name: '工艺', sort: 1 },
+      { code: 'material', name: '胎质', sort: 2 },
+    ],
+  })
+  await prisma.dictItem.createMany({
+    data: [
+      { typeCode: 'craft', label: '青花', value: '青花', sort: 1 },
+      { typeCode: 'craft', label: '釉里红', value: '釉里红', sort: 2 },
+      { typeCode: 'craft', label: '粉彩', value: '粉彩', sort: 3 },
+      { typeCode: 'craft', label: '汝窑', value: '汝窑', sort: 4 },
+      { typeCode: 'craft', label: '玉瓷', value: '玉瓷', sort: 5 },
+      { typeCode: 'craft', label: '结晶釉', value: '结晶釉', sort: 6 },
+      { typeCode: 'craft', label: '手绘', value: '手绘', sort: 7 },
+      { typeCode: 'material', label: '高岭土', value: '高岭土', sort: 1 },
+      { typeCode: 'material', label: '紫砂', value: '紫砂', sort: 2 },
+      { typeCode: 'material', label: '骨瓷', value: '骨瓷', sort: 3 },
+      { typeCode: 'material', label: '青瓷土', value: '青瓷土', sort: 4 },
+      { typeCode: 'material', label: '羊脂玉白瓷', value: '羊脂玉白瓷', sort: 5 },
+    ],
+  })
+
+  // 4. 会员等级
   const [bronze, silver, gold, diamond] = await Promise.all([
     prisma.userLevel.create({ data: { code: 'bronze', name: '普通', minSpent: 0, discount: 1.0, pointsRate: 1.0 } }),
     prisma.userLevel.create({ data: { code: 'silver', name: '白银', minSpent: 1000, discount: 0.98, pointsRate: 1.2 } }),
@@ -104,7 +130,7 @@ async function main() {
     prisma.userLevel.create({ data: { code: 'diamond', name: '钻石', minSpent: 20000, discount: 0.9, pointsRate: 2.0 } }),
   ])
 
-  // 4. 分类（三级树）
+  // 5. 分类（三级树）
   const cateCha = await prisma.category.create({ data: { code: 'C001', name: '茶具', sort: 1, level: 1 } })
   const cateHua = await prisma.category.create({ data: { code: 'C002', name: '花瓶', sort: 2, level: 1 } })
   const cateCan = await prisma.category.create({ data: { code: 'C003', name: '餐具', sort: 3, level: 1 } })
@@ -121,7 +147,7 @@ async function main() {
     data: { code: 'C002001', name: '家用花瓶', sort: 1, level: 2, parentId: cateHua.id },
   })
 
-  // 5. 品牌
+  // 6. 品牌
   const [brandY, brandJ, brandR] = await Promise.all([
     prisma.brand.create({
       data: { code: 'YANGMING', name: '央茗', country: '中国', origin: '江西景德镇', story: '中国高端陶瓷品牌', sort: 1 },
@@ -134,7 +160,7 @@ async function main() {
     }),
   ])
 
-  // 6. 仓库
+  // 7. 仓库
   const [whMain, whJD] = await Promise.all([
     prisma.warehouse.create({
       data: { code: 'WH-MAIN', name: '总仓-上海', address: '上海市嘉定区XX路100号', manager: '刘仓库', phone: '13600000001', isDefault: true },
@@ -144,7 +170,7 @@ async function main() {
     }),
   ])
 
-  // 7. 商品 + SKU + 阶梯价 + 多仓库存
+  // 8. 商品 + SKU + 阶梯价 + 多仓库存
   const product1 = await prisma.product.create({
     data: {
       code: 'P-CHA-001',

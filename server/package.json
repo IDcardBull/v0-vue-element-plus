@@ -2,7 +2,7 @@
   "name": "yangming-server",
   "version": "1.0.0",
   "private": true,
-  "description": "央茗陶瓷 一库多端系统 NestJS 后端",
+  "description": "央皿陶瓷 一库多端系统 NestJS 后端",
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "nest build",

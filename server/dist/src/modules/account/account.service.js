@@ -45,6 +45,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AccountService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../common/prisma.service");
+const log_service_1 = require("../log/log.service");
 const bcrypt = __importStar(require("bcryptjs"));
 /** 前端传入的 status 可能是 'active'/'inactive' 字符串，数据库是 Int（1/0） */
 function toStatusInt(status) {
@@ -68,8 +69,9 @@ function flattenAdminUser(user) {
     };
 }
 let AccountService = class AccountService {
-    constructor(prisma) {
+    constructor(prisma, logService) {
         this.prisma = prisma;
+        this.logService = logService;
     }
     async findAll(query) {
         const page = Number(query.page) || 1;
@@ -169,6 +171,7 @@ let AccountService = class AccountService {
 exports.AccountService = AccountService;
 exports.AccountService = AccountService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        log_service_1.LogService])
 ], AccountService);
 //# sourceMappingURL=account.service.js.map

@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common'
 import { PrismaService } from '@/common/prisma.service'
 import { PageResult } from '@/common/dto/pagination.dto'
 import { PriceTierService } from '../price-tier/price-tier.service'
 import { InventoryService } from '../inventory/inventory.service'
+import { WechatPayService } from '../client/wechat-pay.service'
 
 export type OrderStatus =
   | 'pending_pay'
@@ -12,12 +13,22 @@ export type OrderStatus =
   | 'after_sale'
   | 'closed'
 
+function normalizeOrderChannel(channel?: string) {
+  const value = String(channel || '').trim()
+  if (!value || value === 'all') return undefined
+  if (value === 'retail' || value === 'wholesale' || value === 'live' || value === 'offline') return value
+  return undefined
+}
+
 @Injectable()
 export class OrderService {
+  private readonly logger = new Logger(OrderService.name)
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly priceTier: PriceTierService,
     private readonly inventory: InventoryService,
+    private readonly wechatPay: WechatPayService,
   ) {}
 
   // -------------------- 查询 --------------------
@@ -35,7 +46,8 @@ export class OrderService {
     const pageSize = Number(q.pageSize) || 20
     const where: any = {}
     if (q.orderNo) where.orderNo = { contains: q.orderNo }
-    if (q.channel && q.channel !== 'all') where.channel = q.channel
+    const channel = normalizeOrderChannel(q.channel)
+    if (channel) where.channel = channel
     if (q.status) where.status = q.status
     if (q.userId) where.userId = Number(q.userId)
     if (q.dateFrom || q.dateTo) {
@@ -51,6 +63,7 @@ export class OrderService {
         take: pageSize,
         include: {
           user: { select: { id: true, nickname: true, phone: true, avatar: true } },
+          address: { select: { receiver: true, phone: true, province: true, city: true, district: true, detail: true } },
           items: true,
         },
       }),
@@ -72,10 +85,38 @@ export class OrderService {
     return order
   }
 
+  async getLogistics(orderId: bigint | number) {
+    const order = await this.findById(orderId)
+    return this.wechatPay.queryLogistics({
+      logisticsCompany: order.logisticsCompany,
+      trackingNo: order.trackingNo,
+    })
+  }
+
+  async updateAddress(orderId: bigint | number, userId: number, addressId: number) {
+    const order = await this.findById(orderId)
+    if (order.userId !== userId) throw new NotFoundException('订单不存在')
+    if (!['pending_pay', 'pending_ship'].includes(order.status)) {
+      throw new BadRequestException('当前订单状态不允许修改地址')
+    }
+
+    const addr = await this.prisma.address.findFirst({ where: { id: addressId, userId } })
+    if (!addr) throw new BadRequestException('地址不存在')
+
+    return this.prisma.order.update({
+      where: { id: BigInt(orderId) },
+      data: {
+        addressId: addr.id,
+        receiverSnapshot: addr,
+      },
+    })
+  }
+
   /** 订单状态统计，顶部 Tab 徽标用 */
   async statusCounts(filters: { channel?: string; userId?: number } = {}) {
     const where: any = {}
-    if (filters.channel && filters.channel !== 'all') where.channel = filters.channel
+    const channel = normalizeOrderChannel(filters.channel)
+    if (channel) where.channel = channel
     if (filters.userId) where.userId = filters.userId
 
     const statuses: OrderStatus[] = [
@@ -200,7 +241,7 @@ export class OrderService {
           orderNo,
           userId: input.userId,
           channel: input.channel,
-          source: input.source || 'miniprogram',
+          source: input.source || (input.channel === 'wholesale' ? 'miniprogram_b' : 'miniprogram_a'),
           status: input.useCredit ? 'pending_ship' : 'pending_pay',
           totalAmount: totalAmount + freight,
           freight,
@@ -237,7 +278,7 @@ export class OrderService {
     const order = await this.findById(orderId)
     if (order.status !== 'pending_ship') throw new BadRequestException('订单状态不允许发货')
 
-    return this.prisma.$transaction(async (tx) => {
+    const shippedOrder = await this.prisma.$transaction(async (tx) => {
       // 实际扣减库存：reserved -= qty，onHand -= qty
       for (const it of order.items) {
         const stocks = await tx.stock.findMany({ where: { skuId: it.skuId } })
@@ -294,8 +335,40 @@ export class OrderService {
           trackingNo,
           shippedAt: new Date(),
         },
+        include: {
+          user: true,
+          address: true,
+          items: true,
+        },
       })
     })
+
+    if (shippedOrder.payMethod === 'wechat') {
+      this.wechatPay
+        .uploadShippingInfo({
+          transactionId: shippedOrder.payTransId,
+          outTradeNo: shippedOrder.orderNo,
+          openid: shippedOrder.user?.openid || null,
+          logisticsCompany: company,
+          trackingNo,
+        })
+        .catch((error) => {
+          this.logger.warn(`微信发货信息录入异常: ${error?.message || error}`)
+        })
+
+      this.wechatPay
+        .sendShippingSubscribeMessage({
+          openid: shippedOrder.user?.openid || null,
+          orderNo: shippedOrder.orderNo,
+          logisticsCompany: company,
+          trackingNo,
+        })
+        .catch((error) => {
+          this.logger.warn(`微信订阅消息发送异常: ${error?.message || error}`)
+        })
+    }
+
+    return shippedOrder
   }
 
   async complete(orderId: bigint | number) {

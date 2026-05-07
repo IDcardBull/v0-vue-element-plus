@@ -8,17 +8,29 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var OrderService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OrderService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../common/prisma.service");
 const price_tier_service_1 = require("../price-tier/price-tier.service");
 const inventory_service_1 = require("../inventory/inventory.service");
-let OrderService = class OrderService {
-    constructor(prisma, priceTier, inventory) {
+const wechat_pay_service_1 = require("../client/wechat-pay.service");
+function normalizeOrderChannel(channel) {
+    const value = String(channel || '').trim();
+    if (!value || value === 'all')
+        return undefined;
+    if (value === 'retail' || value === 'wholesale' || value === 'live' || value === 'offline')
+        return value;
+    return undefined;
+}
+let OrderService = OrderService_1 = class OrderService {
+    constructor(prisma, priceTier, inventory, wechatPay) {
         this.prisma = prisma;
         this.priceTier = priceTier;
         this.inventory = inventory;
+        this.wechatPay = wechatPay;
+        this.logger = new common_1.Logger(OrderService_1.name);
     }
     // -------------------- 查询 --------------------
     async search(q) {
@@ -27,8 +39,9 @@ let OrderService = class OrderService {
         const where = {};
         if (q.orderNo)
             where.orderNo = { contains: q.orderNo };
-        if (q.channel && q.channel !== 'all')
-            where.channel = q.channel;
+        const channel = normalizeOrderChannel(q.channel);
+        if (channel)
+            where.channel = channel;
         if (q.status)
             where.status = q.status;
         if (q.userId)
@@ -48,6 +61,7 @@ let OrderService = class OrderService {
                 take: pageSize,
                 include: {
                     user: { select: { id: true, nickname: true, phone: true, avatar: true } },
+                    address: { select: { receiver: true, phone: true, province: true, city: true, district: true, detail: true } },
                     items: true,
                 },
             }),
@@ -68,11 +82,37 @@ let OrderService = class OrderService {
             throw new common_1.NotFoundException('订单不存在');
         return order;
     }
+    async getLogistics(orderId) {
+        const order = await this.findById(orderId);
+        return this.wechatPay.queryLogistics({
+            logisticsCompany: order.logisticsCompany,
+            trackingNo: order.trackingNo,
+        });
+    }
+    async updateAddress(orderId, userId, addressId) {
+        const order = await this.findById(orderId);
+        if (order.userId !== userId)
+            throw new common_1.NotFoundException('订单不存在');
+        if (!['pending_pay', 'pending_ship'].includes(order.status)) {
+            throw new common_1.BadRequestException('当前订单状态不允许修改地址');
+        }
+        const addr = await this.prisma.address.findFirst({ where: { id: addressId, userId } });
+        if (!addr)
+            throw new common_1.BadRequestException('地址不存在');
+        return this.prisma.order.update({
+            where: { id: BigInt(orderId) },
+            data: {
+                addressId: addr.id,
+                receiverSnapshot: addr,
+            },
+        });
+    }
     /** 订单状态统计，顶部 Tab 徽标用 */
     async statusCounts(filters = {}) {
         const where = {};
-        if (filters.channel && filters.channel !== 'all')
-            where.channel = filters.channel;
+        const channel = normalizeOrderChannel(filters.channel);
+        if (channel)
+            where.channel = channel;
         if (filters.userId)
             where.userId = filters.userId;
         const statuses = [
@@ -186,7 +226,7 @@ let OrderService = class OrderService {
                     orderNo,
                     userId: input.userId,
                     channel: input.channel,
-                    source: input.source || 'miniprogram',
+                    source: input.source || (input.channel === 'wholesale' ? 'miniprogram_b' : 'miniprogram_a'),
                     status: input.useCredit ? 'pending_ship' : 'pending_pay',
                     totalAmount: totalAmount + freight,
                     freight,
@@ -222,7 +262,7 @@ let OrderService = class OrderService {
         const order = await this.findById(orderId);
         if (order.status !== 'pending_ship')
             throw new common_1.BadRequestException('订单状态不允许发货');
-        return this.prisma.$transaction(async (tx) => {
+        const shippedOrder = await this.prisma.$transaction(async (tx) => {
             // 实际扣减库存：reserved -= qty，onHand -= qty
             for (const it of order.items) {
                 const stocks = await tx.stock.findMany({ where: { skuId: it.skuId } });
@@ -279,8 +319,37 @@ let OrderService = class OrderService {
                     trackingNo,
                     shippedAt: new Date(),
                 },
+                include: {
+                    user: true,
+                    address: true,
+                    items: true,
+                },
             });
         });
+        if (shippedOrder.payMethod === 'wechat') {
+            this.wechatPay
+                .uploadShippingInfo({
+                transactionId: shippedOrder.payTransId,
+                outTradeNo: shippedOrder.orderNo,
+                openid: shippedOrder.user?.openid || null,
+                logisticsCompany: company,
+                trackingNo,
+            })
+                .catch((error) => {
+                this.logger.warn(`微信发货信息录入异常: ${error?.message || error}`);
+            });
+            this.wechatPay
+                .sendShippingSubscribeMessage({
+                openid: shippedOrder.user?.openid || null,
+                orderNo: shippedOrder.orderNo,
+                logisticsCompany: company,
+                trackingNo,
+            })
+                .catch((error) => {
+                this.logger.warn(`微信订阅消息发送异常: ${error?.message || error}`);
+            });
+        }
+        return shippedOrder;
     }
     async complete(orderId) {
         const order = await this.findById(orderId);
@@ -343,10 +412,11 @@ let OrderService = class OrderService {
     }
 };
 exports.OrderService = OrderService;
-exports.OrderService = OrderService = __decorate([
+exports.OrderService = OrderService = OrderService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         price_tier_service_1.PriceTierService,
-        inventory_service_1.InventoryService])
+        inventory_service_1.InventoryService,
+        wechat_pay_service_1.WechatPayService])
 ], OrderService);
 //# sourceMappingURL=order.service.js.map

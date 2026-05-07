@@ -24,7 +24,12 @@ export function createStockAdjust(data: any) {
   return request.post<any, any>('/admin/inventory/adjust', data)
 }
 
+export function fetchWarehouses() {
+  return request.get<any, Array<{ id: number; name: string; code?: string }>>('/admin/inventory/warehouses')
+}
+
 export const inventoryApi = {
+  warehouses: fetchWarehouses,
   stockList: fetchStockList,
   warnings: fetchStockWarning,
   records: fetchStockRecords,

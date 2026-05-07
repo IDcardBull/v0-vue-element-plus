@@ -21,8 +21,8 @@
           <el-input v-model="filter.keyword" placeholder="账号 / 姓名 / 手机号" clearable style="width: 220px" />
         </el-form-item>
         <el-form-item label="角色">
-          <el-select v-model="filter.role" placeholder="全部" clearable style="width: 160px">
-            <el-option v-for="r in roleList" :key="r.code" :label="r.name" :value="r.code" />
+          <el-select v-model="filter.roleId" placeholder="全部" clearable style="width: 160px">
+            <el-option v-for="r in roleList" :key="r.id" :label="r.name" :value="r.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -33,7 +33,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :icon="Search">查询</el-button>
+          <el-button type="primary" :icon="Search" @click="loadAccounts">查询</el-button>
           <el-button :icon="RefreshLeft" @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -93,8 +93,8 @@
         <el-form-item label="登录账号" prop="username">
           <el-input v-model="form.username" :disabled="mode === 'edit'" placeholder="建议字母 + 数字" />
         </el-form-item>
-        <el-form-item label="真实姓名" prop="name">
-          <el-input v-model="form.name" />
+        <el-form-item label="真实姓名" prop="realName">
+          <el-input v-model="form.realName" />
         </el-form-item>
         <el-form-item label="手机号" prop="phone">
           <el-input v-model="form.phone" />
@@ -112,9 +112,9 @@
             <el-option label="财务部" value="财务部" />
           </el-select>
         </el-form-item>
-        <el-form-item label="分配角色" prop="roleCode">
-          <el-select v-model="form.roleCode" style="width: 100%">
-            <el-option v-for="r in roleList" :key="r.code" :label="r.name" :value="r.code" />
+        <el-form-item label="分配角色" prop="roleId">
+          <el-select v-model="form.roleId" style="width: 100%">
+            <el-option v-for="r in roleList" :key="r.id" :label="r.name" :value="r.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -138,6 +138,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, RefreshLeft } from '@element-plus/icons-vue'
 import { accountApi } from '@/api/account'
+import { roleApi } from '@/api/role'
 
 interface Account {
   id: number
@@ -146,136 +147,201 @@ interface Account {
   phone: string
   email: string
   dept: string
-  roleCode: string
+  roleId: number | null
   roleName: string
   lastLogin: string
   lastIp: string
-  status: 'active' | 'inactive' | 'locked'
+  status: 'active' | 'inactive'
   createdAt: string
 }
 
-const roleList = [
-  { code: 'super', name: '超级管理员' },
-  { code: 'admin', name: '运营管理员' },
-  { code: 'finance', name: '财务' },
-  { code: 'warehouse', name: '仓管' },
-  { code: 'cs', name: '客服' },
-  { code: 'sales', name: '销售' },
-]
+interface RoleItem {
+  id: number
+  code: string
+  name: string
+  accounts: number
+  desc: string
+}
 
-const filter = reactive({ keyword: '', role: '', status: '' })
+const roleList = ref<RoleItem[]>([])
+const loading = ref(false)
+const submitting = ref(false)
+
+async function loadRoles() {
+  try {
+    const res: any = await roleApi.list()
+    const rows: any[] = Array.isArray(res) ? res : (res?.list ?? [])
+    roleList.value = rows.map((r: any) => ({
+      id: r.id,
+      code: r.code || '',
+      name: r.name || '',
+      accounts: r._count?.users ?? r.accountCount ?? 0,
+      desc: r.description || '',
+    }))
+  } catch {
+    console.warn('加载角色列表失败')
+  }
+}
+
+const filter = reactive({ keyword: '', roleId: null as number | null, status: '' })
 
 const accountList = ref<Account[]>([])
 const loadError = ref('')
 
-async function loadAccounts() {
-  loadError.value = ''
-  try {
-    const res: any = await accountApi.list({ page: 1, pageSize: 100 })
-    const rows = (res?.list ?? []) as any[]
-    accountList.value = rows.map((r: any, i: number) => ({
-      id: r.id ?? i + 1,
-      username: r.username || '',
-      name: r.realName || r.name || '',
-      phone: r.phone || '',
-      email: r.email || '',
-      dept: r.department || r.dept || '',
-      roleCode: r.role?.code || r.roleCode || '',
-      roleName: r.role?.name || r.roleName || '',
-      lastLogin: r.lastLoginAt || r.lastLogin || '',
-      lastIp: r.lastLoginIp || r.lastIp || '',
-      status: (typeof r.status === 'number' ? (r.status === 1 ? 'active' : 'inactive') : r.status) || 'active',
-      createdAt: r.createdAt || '',
-    })) as any
-  } catch (e: any) {
-    loadError.value = e?.message || '后端服务不可用'
-    accountList.value = []
+function mapAccountRow(r: any): Account {
+  const firstRole = r.role ?? r.roles?.[0]
+  return {
+    id: r.id,
+    username: r.username || '',
+    name: r.realName || r.name || '',
+    phone: r.phone || '',
+    email: r.email || '',
+    dept: r.department || r.dept || '',
+    roleId: r.roleId ?? firstRole?.id ?? null,
+    roleName: firstRole?.name || r.roleName || '未分配',
+    lastLogin: r.lastLoginAt || r.lastLogin || '',
+    lastIp: r.lastLoginIp || r.lastIp || '',
+    status: typeof r.status === 'number' ? (r.status === 1 ? 'active' : 'inactive') : (r.status || 'active'),
+    createdAt: r.createdAt || '',
   }
 }
 
-onMounted(loadAccounts)
+async function loadAccounts() {
+  loadError.value = ''
+  loading.value = true
+  try {
+    const params: any = { page: 1, pageSize: 100 }
+    if (filter.keyword) params.keyword = filter.keyword
+    if (filter.roleId) params.roleId = filter.roleId
+    if (filter.status) params.status = filter.status
+    const res: any = await accountApi.list(params)
+    const rows = (res?.list ?? []) as any[]
+    accountList.value = rows.map(mapAccountRow)
+  } catch (e: any) {
+    loadError.value = e?.message || '后端服务不可用'
+    accountList.value = []
+  } finally {
+    loading.value = false
+  }
+}
 
-function statusType(s: string): 'success' | 'info' | 'danger' {
-  return s === 'active' ? 'success' : s === 'locked' ? 'danger' : 'info'
+onMounted(async () => {
+  await loadRoles()
+  loadAccounts()
+})
+
+function statusType(s: string): 'success' | 'info' {
+  return s === 'active' ? 'success' : 'info'
 }
 function statusText(s: string) {
-  return s === 'active' ? '启用' : s === 'locked' ? '锁定' : '停用'
+  return s === 'active' ? '启用' : '停用'
 }
 
 const dialogVisible = ref(false)
 const mode = ref<'create' | 'edit'>('create')
 const formRef = ref<FormInstance>()
-const form = reactive<Account>({
+const form = reactive({
   id: 0,
   username: '',
-  name: '',
+  realName: '',
   phone: '',
   email: '',
   dept: '',
-  roleCode: '',
-  roleName: '',
-  lastLogin: '',
-  lastIp: '',
-  status: 'active',
-  createdAt: '',
+  roleId: null as number | null,
+  password: '',
+  status: 'active' as 'active' | 'inactive',
 })
 
 const rules: FormRules = {
   username: [{ required: true, message: '请输入登录账号', trigger: 'blur' }],
-  name: [{ required: true, message: '请输入真实姓名', trigger: 'blur' }],
+  realName: [{ required: true, message: '请输入真实姓名', trigger: 'blur' }],
   phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }],
-  roleCode: [{ required: true, message: '请选择角色', trigger: 'change' }],
+  roleId: [{ required: true, message: '请选择角色', trigger: 'change' }],
 }
 
 function handleCreate() {
   mode.value = 'create'
   Object.assign(form, {
-    id: 0, username: '', name: '', phone: '', email: '', dept: '运营中心',
-    roleCode: '', roleName: '', lastLogin: '-', lastIp: '-',
-    status: 'active', createdAt: new Date().toISOString().slice(0, 10),
+    id: 0, username: '', realName: '', phone: '', email: '', dept: '运营中心',
+    roleId: null, password: '',
+    status: 'active',
   })
+  formRef.value?.resetFields()
   dialogVisible.value = true
 }
 
 function handleEdit(row: Account) {
   mode.value = 'edit'
-  Object.assign(form, row)
+  Object.assign(form, {
+    id: row.id,
+    username: row.username,
+    realName: row.name,
+    phone: row.phone,
+    email: row.email,
+    dept: row.dept,
+    roleId: row.roleId,
+    password: '',
+    status: row.status,
+  })
+  formRef.value?.resetFields()
   dialogVisible.value = true
 }
 
-function handleToggle(row: Account) {
-  row.status = row.status === 'active' ? 'inactive' : 'active'
-  ElMessage.success(`已${row.status === 'active' ? '启用' : '停用'}账号：${row.username}`)
+async function handleToggle(row: Account) {
+  const nextStatus = row.status === 'active' ? 'inactive' : 'active'
+  try {
+    await accountApi.update(row.id, { status: nextStatus })
+    row.status = nextStatus
+    ElMessage.success(`已${row.status === 'active' ? '启用' : '停用'}账号：${row.username}`)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '操作失败')
+  }
 }
 
 function handleReset2FA(row: Account) {
-  ElMessageBox.confirm(`确定重置账号「${row.username}」的登录密码？`, '重置确认', {
+  ElMessageBox.confirm(`确定重置账号「${row.username}」的登录密码为 123456？`, '重置确认', {
     type: 'warning',
-  }).then(() => {
-    ElMessage.success('已发送重置密码链接至用户邮箱')
+  }).then(async () => {
+    try {
+      await accountApi.resetPassword(row.id)
+      ElMessage.success('密码已重置为 123456')
+    } catch (error: any) {
+      ElMessage.error(error?.message || '重置失败')
+    }
   }).catch(() => {})
 }
 
-function handleSubmit() {
-  formRef.value?.validate((valid) => {
-    if (!valid) return
-    const role = roleList.find((r) => r.code === form.roleCode)
-    form.roleName = role?.name || ''
+async function handleSubmit() {
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
+  const payload = {
+    username: form.username,
+    realName: form.realName,
+    phone: form.phone,
+    email: form.email,
+    department: form.dept,
+    roleId: form.roleId,
+    password: form.password || undefined,
+    status: form.status,
+  }
+  try {
     if (mode.value === 'create') {
-      accountList.value.unshift({ ...form, id: Date.now() })
+      await accountApi.create(payload)
       ElMessage.success('账号创建成功')
     } else {
-      const idx = accountList.value.findIndex((a) => a.id === form.id)
-      if (idx >= 0) accountList.value[idx] = { ...form }
+      await accountApi.update(form.id, payload)
       ElMessage.success('已更新')
     }
     dialogVisible.value = false
-  })
+    await loadAccounts()
+  } catch (error: any) {
+    ElMessage.error(error?.message || '保存失败')
+  }
 }
 
 function handleReset() {
   filter.keyword = ''
-  filter.role = ''
+  filter.roleId = null
   filter.status = ''
 }
 </script>

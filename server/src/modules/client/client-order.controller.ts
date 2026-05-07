@@ -30,6 +30,12 @@ class OrderItemDto {
 }
 
 class CreateOrderDto {
+  @IsOptional() @IsString()
+  channel?: 'retail' | 'wholesale'
+
+  @IsOptional() @IsString()
+  source?: string
+
   @IsArray()
   @ArrayMinSize(1, { message: '商品不能为空' })
   @ValidateNested({ each: true })
@@ -41,7 +47,19 @@ class CreateOrderDto {
 
   @IsOptional() @IsString() @MaxLength(500)
   remark?: string
+
+  @IsOptional() @IsString()
+  payMethod?: string
+
+  @IsOptional()
+  useCredit?: boolean
 }
+
+class UpdateAddressDto {
+  @IsInt() @Min(1)
+  addressId: number
+}
+
 
 @Controller('client/orders')
 export class ClientOrderController {
@@ -58,14 +76,17 @@ export class ClientOrderController {
   @Post()
   async create(@CurrentUser() user: JwtPayload, @Body() dto: CreateOrderDto) {
     this.ensureClient(user)
+    const channel = dto.channel === 'wholesale' ? 'wholesale' : 'retail'
+    const source = dto.source || (channel === 'wholesale' ? 'miniprogram_b' : 'miniprogram')
     return this.orderSvc.createOrder({
       userId: user.sub,
-      channel: 'retail',
-      source: 'miniprogram',
+      channel,
+      source,
       items: dto.items,
       addressId: dto.addressId,
       remark: dto.remark,
-      payMethod: 'wechat',
+      payMethod: dto.payMethod || 'wechat',
+      useCredit: !!dto.useCredit,
     })
   }
 
@@ -94,6 +115,17 @@ export class ClientOrderController {
   counts(@CurrentUser() user: JwtPayload) {
     this.ensureClient(user)
     return this.orderSvc.statusCounts({ userId: user.sub })
+  }
+
+  @Get(':id/logistics')
+  async logistics(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    this.ensureClient(user)
+    const order = await this.orderSvc.findById(id)
+    if (order.userId !== user.sub) throw new NotFoundException('订单不存在')
+    return this.orderSvc.getLogistics(id)
   }
 
   @Get(':id')
@@ -130,5 +162,40 @@ export class ClientOrderController {
     const order = await this.orderSvc.findById(id)
     if (order.userId !== user.sub) throw new NotFoundException('订单不存在')
     return this.orderSvc.complete(id)
+  }
+
+  /** 更新收货地址（主路径） */
+  @Patch(':id/address')
+  async updateAddress(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateAddressDto,
+  ) {
+    this.ensureClient(user)
+    return this.orderSvc.updateAddress(id, user.sub, Number(dto.addressId))
+  }
+
+  /** 更新收货地址（兼容回退路径） */
+  @Post('/update-address')
+  async updateAddressFallback(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { id: number; addressId: number },
+  ) {
+    this.ensureClient(user)
+    return this.orderSvc.updateAddress(Number(body.id), user.sub, Number(body.addressId))
+  }
+}
+
+@Controller('client/order')
+export class ClientOrderCompatController {
+  constructor(private readonly orderSvc: OrderService) {}
+
+  @Post('update-address')
+  async updateAddressFallback(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { id: number; addressId: number },
+  ) {
+    if (user.userType !== 'client') throw new ForbiddenException('仅小程序用户可下单')
+    return this.orderSvc.updateAddress(Number(body.id), user.sub, Number(body.addressId))
   }
 }

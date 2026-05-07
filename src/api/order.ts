@@ -25,6 +25,10 @@ export function shipOrder(
   return request.post<any, any>(`/admin/orders/${id}/ship`, data)
 }
 
+export function fetchOrderLogistics(id: number) {
+  return request.get<any, any>(`/admin/orders/${id}/logistics`)
+}
+
 export function completeOrder(id: number) {
   return request.post<any, any>(`/admin/orders/${id}/complete`)
 }
@@ -41,6 +45,7 @@ export const orderApi = {
   list: fetchOrders,
   get: fetchOrder,
   ship: shipOrder,
+  logistics: fetchOrderLogistics,
   complete: completeOrder,
   close: closeOrder,
   refund: refundOrder,

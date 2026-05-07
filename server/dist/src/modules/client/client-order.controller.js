@@ -12,7 +12,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ClientOrderController = void 0;
+exports.ClientOrderCompatController = exports.ClientOrderController = void 0;
 const common_1 = require("@nestjs/common");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
@@ -32,6 +32,16 @@ __decorate([
 class CreateOrderDto {
 }
 __decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateOrderDto.prototype, "channel", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateOrderDto.prototype, "source", void 0);
+__decorate([
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ArrayMinSize)(1, { message: '商品不能为空' }),
     (0, class_validator_1.ValidateNested)({ each: true }),
@@ -49,6 +59,22 @@ __decorate([
     (0, class_validator_1.MaxLength)(500),
     __metadata("design:type", String)
 ], CreateOrderDto.prototype, "remark", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateOrderDto.prototype, "payMethod", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Boolean)
+], CreateOrderDto.prototype, "useCredit", void 0);
+class UpdateAddressDto {
+}
+__decorate([
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(1),
+    __metadata("design:type", Number)
+], UpdateAddressDto.prototype, "addressId", void 0);
 let ClientOrderController = class ClientOrderController {
     constructor(orderSvc) {
         this.orderSvc = orderSvc;
@@ -63,14 +89,17 @@ let ClientOrderController = class ClientOrderController {
      */
     async create(user, dto) {
         this.ensureClient(user);
+        const channel = dto.channel === 'wholesale' ? 'wholesale' : 'retail';
+        const source = dto.source || (channel === 'wholesale' ? 'miniprogram_b' : 'miniprogram');
         return this.orderSvc.createOrder({
             userId: user.sub,
-            channel: 'retail',
-            source: 'miniprogram',
+            channel,
+            source,
             items: dto.items,
             addressId: dto.addressId,
             remark: dto.remark,
-            payMethod: 'wechat',
+            payMethod: dto.payMethod || 'wechat',
+            useCredit: !!dto.useCredit,
         });
     }
     /**
@@ -90,6 +119,13 @@ let ClientOrderController = class ClientOrderController {
     counts(user) {
         this.ensureClient(user);
         return this.orderSvc.statusCounts({ userId: user.sub });
+    }
+    async logistics(user, id) {
+        this.ensureClient(user);
+        const order = await this.orderSvc.findById(id);
+        if (order.userId !== user.sub)
+            throw new common_1.NotFoundException('订单不存在');
+        return this.orderSvc.getLogistics(id);
     }
     async detail(user, id) {
         this.ensureClient(user);
@@ -113,6 +149,16 @@ let ClientOrderController = class ClientOrderController {
         if (order.userId !== user.sub)
             throw new common_1.NotFoundException('订单不存在');
         return this.orderSvc.complete(id);
+    }
+    /** 更新收货地址（主路径） */
+    async updateAddress(user, id, dto) {
+        this.ensureClient(user);
+        return this.orderSvc.updateAddress(id, user.sub, Number(dto.addressId));
+    }
+    /** 更新收货地址（兼容回退路径） */
+    async updateAddressFallback(user, body) {
+        this.ensureClient(user);
+        return this.orderSvc.updateAddress(Number(body.id), user.sub, Number(body.addressId));
     }
 };
 exports.ClientOrderController = ClientOrderController;
@@ -142,6 +188,14 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], ClientOrderController.prototype, "counts", null);
 __decorate([
+    (0, common_1.Get)(':id/logistics'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Number]),
+    __metadata("design:returntype", Promise)
+], ClientOrderController.prototype, "logistics", null);
+__decorate([
     (0, common_1.Get)(':id'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
@@ -166,8 +220,48 @@ __decorate([
     __metadata("design:paramtypes", [Object, Number]),
     __metadata("design:returntype", Promise)
 ], ClientOrderController.prototype, "confirm", null);
+__decorate([
+    (0, common_1.Patch)(':id/address'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Number, UpdateAddressDto]),
+    __metadata("design:returntype", Promise)
+], ClientOrderController.prototype, "updateAddress", null);
+__decorate([
+    (0, common_1.Post)('/update-address'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], ClientOrderController.prototype, "updateAddressFallback", null);
 exports.ClientOrderController = ClientOrderController = __decorate([
     (0, common_1.Controller)('client/orders'),
     __metadata("design:paramtypes", [order_service_1.OrderService])
 ], ClientOrderController);
+let ClientOrderCompatController = class ClientOrderCompatController {
+    constructor(orderSvc) {
+        this.orderSvc = orderSvc;
+    }
+    async updateAddressFallback(user, body) {
+        if (user.userType !== 'client')
+            throw new common_1.ForbiddenException('仅小程序用户可下单');
+        return this.orderSvc.updateAddress(Number(body.id), user.sub, Number(body.addressId));
+    }
+};
+exports.ClientOrderCompatController = ClientOrderCompatController;
+__decorate([
+    (0, common_1.Post)('update-address'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], ClientOrderCompatController.prototype, "updateAddressFallback", null);
+exports.ClientOrderCompatController = ClientOrderCompatController = __decorate([
+    (0, common_1.Controller)('client/order'),
+    __metadata("design:paramtypes", [order_service_1.OrderService])
+], ClientOrderCompatController);
 //# sourceMappingURL=client-order.controller.js.map

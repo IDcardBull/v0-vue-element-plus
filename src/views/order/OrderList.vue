@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, h, resolveComponent } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { orderApi } from '@/api/order'
 import {
@@ -12,6 +13,24 @@ import {
   Money,
   Files,
 } from '@element-plus/icons-vue'
+
+const logisticsCompanyOptions = [
+  { label: '顺丰速运', value: '顺丰速运' },
+  { label: '中通快递', value: '中通快递' },
+  { label: '圆通速递', value: '圆通速递' },
+  { label: '申通快递', value: '申通快递' },
+  { label: '韵达速递', value: '韵达速递' },
+  { label: '京东物流', value: '京东物流' },
+  { label: '德邦快递', value: '德邦快递' },
+]
+
+const route = useRoute()
+const pageChannel = computed<'' | 'retail' | 'wholesale'>(() => {
+  if (route.path.includes('/order/wholesale')) return 'wholesale'
+  if (route.path.includes('/order/retail')) return 'retail'
+  return ''
+})
+const pageTitle = computed(() => (pageChannel.value === 'wholesale' ? '批发订单' : '零售订单'))
 
 /* ----------------------------------- 类型 ---------------------------------- */
 type OrderChannel = 'retail' | 'wholesale' | 'live' | 'offline'
@@ -43,6 +62,8 @@ interface Order {
   paid: number
   pay_method: string
   created_at: string
+  source: string
+  source_label: string
   items: OrderItem[]
   logistics?: { company: string; tracking_no: string }
 }
@@ -75,6 +96,22 @@ const channelMeta: Record<OrderChannel, { label: string; color: string }> = {
   offline: { label: '线下', color: '#909399' },
 }
 
+const sourceMeta: Record<string, { label: string; type: 'primary' | 'success' | 'warning' | 'info' }> = {
+  miniprogram_a: { label: '小程序A', type: 'primary' },
+  miniprogram_b: { label: '小程序B', type: 'warning' },
+  miniprogram: { label: '小程序A', type: 'primary' },
+  h5: { label: '批发H5', type: 'success' },
+  admin: { label: '后台', type: 'info' },
+  b2b: { label: '小程序B', type: 'warning' },
+}
+
+function getSourceMeta(source: string, channel?: OrderChannel) {
+  if (sourceMeta[source]) return sourceMeta[source]
+  return channel === 'wholesale'
+    ? { label: '小程序B', type: 'warning' as const }
+    : { label: '小程序A', type: 'primary' as const }
+}
+
 /* --------------------------------- 筛选条件 -------------------------------- */
 const filters = reactive({
   keyword: '',
@@ -85,6 +122,22 @@ const filters = reactive({
 
 const allOrders = ref<Order[]>([])
 const loadError = ref('')
+const isPolling = ref(true)
+let loadSeq = 0
+let pollingTimer: ReturnType<typeof setInterval> | null = null
+
+function normalizeProvince(value: string) {
+  const province = (value || '').trim()
+  if (!province) return ''
+  return province
+    .replace(/省$/u, '')
+    .replace(/市$/u, '')
+    .replace(/壮族自治区$/u, '')
+    .replace(/回族自治区$/u, '')
+    .replace(/维吾尔自治区$/u, '')
+    .replace(/自治区$/u, '')
+    .replace(/特别行政区$/u, '')
+}
 
 function mapOrderStatus(s: any): OrderStatus {
   const m: Record<string, OrderStatus> = {
@@ -103,42 +156,79 @@ function mapOrderStatus(s: any): OrderStatus {
 }
 
 async function loadOrders() {
+  const seq = ++loadSeq
+  const currentChannel = pageChannel.value
   loadError.value = ''
   try {
-    const res: any = await orderApi.list({ page: 1, pageSize: 100 })
+    const res: any = await orderApi.list({ page: 1, pageSize: 100, channel: currentChannel || undefined })
+    if (seq !== loadSeq) return
     const rows = (res?.list ?? []) as any[]
-    allOrders.value = rows.map((r: any): Order => ({
-      id: String(r.id),
-      order_no: r.orderNo || r.code || '',
-      channel: (r.channel || 'retail') as OrderChannel,
-      status: mapOrderStatus(r.status),
-      buyer: r.customerName || r.user?.realName || r.user?.nickname || r.buyer || '',
-      buyer_phone: r.customerPhone || r.user?.phone || r.buyer_phone || '',
-      province: r.province || r.shippingAddress?.province || '',
-      total: Number(r.totalAmount ?? r.amount ?? r.total ?? 0),
-      paid: Number(r.paidAmount ?? r.paid ?? 0),
-      pay_method: r.payMethod || r.pay_method || '--',
-      created_at: r.createdAt || r.created_at || '',
-      items: (r.items || []).map((it: any) => ({
-        sku_id: String(it.skuId ?? it.sku_id ?? it.id ?? ''),
-        name: it.productName || it.name || '',
-        spec: it.spec || it.skuSpecs || '',
-        price: Number(it.price ?? 0),
-        qty: Number(it.qty ?? it.quantity ?? 1),
-        image: it.image || it.cover || '/placeholder.svg?height=56&width=56',
-      })),
-      logistics: r.logistics || (r.shippingCompany ? {
-        company: r.shippingCompany,
-        tracking_no: r.trackingNo || '',
-      } : undefined),
-    }))
+    allOrders.value = rows
+      .filter((r: any) => !currentChannel || r.channel === currentChannel)
+      .map((r: any): Order => {
+      const channel = (r.channel || pageChannel.value || 'retail') as OrderChannel
+      const source = r.source || (channel === 'wholesale' ? 'miniprogram_b' : 'miniprogram_a')
+      const sourceInfo = getSourceMeta(source, channel)
+      return {
+        id: String(r.id),
+        order_no: r.orderNo || r.code || '',
+        channel,
+        status: mapOrderStatus(r.status),
+        buyer: r.customerName || r.receiverSnapshot?.receiver || r.address?.receiver || r.user?.realName || r.user?.nickname || r.buyer || '',
+        buyer_phone: r.customerPhone || r.receiverSnapshot?.phone || r.address?.phone || r.user?.phone || r.buyer_phone || '',
+        province: normalizeProvince(r.province || r.receiverSnapshot?.province || r.address?.province || r.shippingAddress?.province || ''),
+        total: Number(r.totalAmount ?? r.amount ?? r.total ?? 0),
+        paid: Number(r.paidAmount ?? r.paid ?? 0),
+        pay_method: r.payMethod || r.pay_method || '--',
+        created_at: r.createdAt || r.created_at || '',
+        source,
+        source_label: sourceInfo.label,
+        items: (r.items || []).map((it: any) => ({
+          sku_id: String(it.skuId ?? it.sku_id ?? it.id ?? ''),
+          name: it.productName || it.name || '',
+          spec: it.spec || it.skuSpecs || '',
+          price: Number(it.price ?? 0),
+          qty: Number(it.qty ?? it.quantity ?? 1),
+          image: it.image || it.cover || '/placeholder.svg?height=56&width=56',
+        })),
+        logistics: r.logistics || (r.shippingCompany ? {
+          company: r.shippingCompany,
+          tracking_no: r.trackingNo || '',
+        } : undefined),
+      }
+    })
   } catch (e: any) {
+    if (seq !== loadSeq) return
     loadError.value = e?.message || '后端服务不可用'
     allOrders.value = []
   }
 }
 
-onMounted(loadOrders)
+onMounted(() => {
+  loadOrders()
+  pollingTimer = setInterval(() => {
+    if (!isPolling.value) return
+    loadOrders()
+  }, 10000)
+})
+
+watch(pageChannel, () => {
+  activeTab.value = 'all'
+  filters.keyword = ''
+  filters.channel = ''
+  filters.province = ''
+  filters.dateRange = []
+  page.current = 1
+  allOrders.value = []
+  loadOrders()
+})
+
+onUnmounted(() => {
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
+  }
+})
 
 // 计算各状态数量
 const tabWithCount = computed(() =>
@@ -172,14 +262,32 @@ const filteredOrders = computed(() => {
   if (filters.province) {
     list = list.filter((o) => o.province === filters.province)
   }
+  if (filters.dateRange?.length === 2) {
+    const start = new Date(filters.dateRange[0]).getTime()
+    const end = new Date(filters.dateRange[1]).getTime() + 24 * 60 * 60 * 1000 - 1
+    if (!Number.isNaN(start) && !Number.isNaN(end)) {
+      list = list.filter((o) => {
+        const ts = new Date(o.created_at).getTime()
+        return !Number.isNaN(ts) && ts >= start && ts <= end
+      })
+    }
+  }
   return list
 })
 
 const provinceOptions = computed(() =>
-  Array.from(new Set(allOrders.value.map((o) => o.province))).map((p) => ({
-    value: p,
-    label: p,
-  })),
+  Array.from(
+    new Set(
+      allOrders.value
+        .map((o) => normalizeProvince(o.province))
+        .filter(Boolean),
+    ),
+  )
+    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    .map((p) => ({
+      value: p,
+      label: p,
+    })),
 )
 
 /* --------------------------------- 分页状态 -------------------------------- */
@@ -201,28 +309,90 @@ const stats = computed(() => {
 })
 
 /* --------------------------------- 操作方法 -------------------------------- */
+function handleSearch() {
+  page.current = 1
+  loadOrders()
+}
+
 function resetFilters() {
   filters.keyword = ''
   filters.channel = ''
   filters.province = ''
   filters.dateRange = []
   page.current = 1
+  loadOrders()
 }
 
-function handleShip(order: Order) {
-  ElMessageBox.prompt(`请输入物流单号（订单号 ${order.order_no}）`, '发货', {
-    confirmButtonText: '确认发货',
-    cancelButtonText: '取消',
-    inputPlaceholder: '例如：SF1234567890',
-    inputPattern: /^[A-Za-z0-9]{6,}$/,
-    inputErrorMessage: '请输入有效单号',
+async function handleShip(order: Order) {
+  const form = reactive({
+    logisticsCompany: '顺丰速运',
+    logisticsNo: '',
   })
-    .then(({ value }) => {
-      order.status = 'shipped'
-      order.logistics = { company: '顺丰速运', tracking_no: value }
-      ElMessage.success('已发货')
+  const ElSelect = resolveComponent('el-select')
+  const ElOption = resolveComponent('el-option')
+  const ElInput = resolveComponent('el-input')
+
+  try {
+    await ElMessageBox({
+      title: `订单发货：${order.order_no}`,
+      message: h('div', { class: 'ship-form' }, [
+        h('div', { class: 'ship-form-item' }, [
+          h('div', { class: 'ship-form-label' }, '物流公司'),
+          h(ElSelect as any, {
+            modelValue: form.logisticsCompany,
+            'onUpdate:modelValue': (value: string) => {
+              form.logisticsCompany = value
+            },
+            placeholder: '请选择物流公司',
+            style: 'width: 100%',
+          }, () => logisticsCompanyOptions.map((item) => h(ElOption as any, {
+            label: item.label,
+            value: item.value,
+          }))),
+        ]),
+        h('div', { class: 'ship-form-item' }, [
+          h('div', { class: 'ship-form-label' }, '物流单号'),
+          h(ElInput as any, {
+            modelValue: form.logisticsNo,
+            'onUpdate:modelValue': (value: string) => {
+              form.logisticsNo = value
+            },
+            placeholder: '请输入物流单号',
+            clearable: true,
+          }),
+        ]),
+      ]),
+      confirmButtonText: '确认发货',
+      cancelButtonText: '取消',
+      beforeClose: async (action, _instance, done) => {
+        if (action !== 'confirm') {
+          done()
+          return
+        }
+        if (!form.logisticsCompany) {
+          ElMessage.warning('请选择物流公司')
+          return
+        }
+        if (!/^[A-Za-z0-9]{6,}$/u.test(form.logisticsNo)) {
+          ElMessage.warning('请输入有效物流单号')
+          return
+        }
+        try {
+          await orderApi.ship(Number(order.id), {
+            logisticsCompany: form.logisticsCompany,
+            logisticsNo: form.logisticsNo,
+          })
+          await loadOrders()
+          ElMessage.success('已发货')
+          done()
+        } catch (error: any) {
+          ElMessage.error(error?.message || '发货失败')
+        }
+      },
     })
-    .catch(() => void 0)
+  } catch {
+    // 用户取消
+  }
 }
 
 function copyOrderNo(no: string) {
@@ -232,18 +402,84 @@ function copyOrderNo(no: string) {
 
 const detailVisible = ref(false)
 const detailOrder = ref<Order | null>(null)
+const logisticsVisible = ref(false)
+const logisticsLoading = ref(false)
+const logisticsInfo = ref<any>(null)
+
 function viewDetail(order: Order) {
   detailOrder.value = order
   detailVisible.value = true
 }
 
+async function viewLogistics(order: Order) {
+  logisticsVisible.value = true
+  logisticsLoading.value = true
+  logisticsInfo.value = {
+    company: order.logistics?.company || '',
+    trackingNo: order.logistics?.tracking_no || '',
+    traces: [],
+  }
+  try {
+    logisticsInfo.value = await orderApi.logistics(Number(order.id))
+  } catch (error: any) {
+    ElMessage.error(error?.message || '获取物流信息失败')
+  } finally {
+    logisticsLoading.value = false
+  }
+}
+
+function escapeCsvCell(value: unknown) {
+  const text = String(value ?? '')
+  if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`
+  return text
+}
+
+function downloadCsv(filename: string, header: string[], rows: Array<Array<unknown>>) {
+  const csv = [header, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\r\n')
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 function exportData() {
-  ElMessage.success(`正在导出 ${stats.value.count} 条订单...`)
+  const rows = filteredOrders.value.map((o) => [
+    o.order_no,
+    o.created_at,
+    channelMeta[o.channel]?.label || o.channel,
+    o.source_label,
+    statusMeta[o.status]?.label || o.status,
+    o.buyer,
+    o.buyer_phone,
+    o.province,
+    o.total,
+    o.paid,
+    o.pay_method,
+    o.items.map((it) => `${it.name}(${it.spec}) x${it.qty}`).join('；'),
+  ])
+  downloadCsv(
+    `${pageTitle.value}-${new Date().toISOString().slice(0, 10)}.csv`,
+    ['订单号', '下单时间', '渠道', '来源', '状态', '客户', '手机号', '省份', '订单金额', '实收金额', '支付方式', '商品明细'],
+    rows,
+  )
+  ElMessage.success(`已导出 ${rows.length} 条订单`) 
 }
 </script>
 
 <template>
   <div class="order-list-page">
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">{{ pageTitle }}</h2>
+        <p class="page-subtitle">{{ pageChannel === 'wholesale' ? '小程序B / 批发渠道订单独立管理' : '小程序A / 零售渠道订单独立管理' }}</p>
+      </div>
+      <div class="page-actions">
+        <el-switch v-model="isPolling" inline-prompt active-text="自动刷新" inactive-text="已暂停" />
+      </div>
+    </div>
     <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
       <template #default>
         <span>后端服务不可用。</span>
@@ -304,7 +540,7 @@ function exportData() {
             :prefix-icon="Search"
           />
         </el-form-item>
-        <el-form-item label="下单���道">
+        <el-form-item v-if="!pageChannel" label="下单渠道">
           <el-select v-model="filters.channel" placeholder="全部渠道" clearable style="width: 140px">
             <el-option value="retail" label="零售" />
             <el-option value="wholesale" label="批发" />
@@ -333,7 +569,7 @@ function exportData() {
           />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :icon="Search">查询</el-button>
+          <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
           <el-button :icon="Refresh" @click="resetFilters">重置</el-button>
           <el-button :icon="Download" @click="exportData">导出</el-button>
         </el-form-item>
@@ -435,6 +671,14 @@ function exportData() {
           </template>
         </el-table-column>
 
+        <el-table-column label="来源" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="getSourceMeta(row.source, row.channel).type" effect="light">
+              {{ row.source_label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
         <el-table-column label="金额" width="140" align="right">
           <template #default="{ row }">
             <div class="amount-cell">
@@ -473,6 +717,7 @@ function exportData() {
               v-if="row.status === 'shipped' || row.status === 'completed'"
               type="primary"
               link
+              @click="viewLogistics(row)"
             >物流</el-button>
           </template>
         </el-table-column>
@@ -489,6 +734,32 @@ function exportData() {
         />
       </div>
     </el-card>
+
+    <el-dialog v-model="logisticsVisible" title="物流信息" width="520px">
+      <div v-loading="logisticsLoading" class="logistics-panel">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="物流公司">
+            {{ logisticsInfo?.company || '--' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="物流单号">
+            {{ logisticsInfo?.trackingNo || '--' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="查询状态">
+            {{ logisticsInfo?.message || (logisticsInfo?.supported ? '查询成功' : '暂无轨迹') }}
+          </el-descriptions-item>
+        </el-descriptions>
+        <el-timeline v-if="logisticsInfo?.traces?.length" class="logistics-timeline">
+          <el-timeline-item
+            v-for="(trace, index) in logisticsInfo.traces"
+            :key="index"
+            :timestamp="trace.time || trace.acceptTime || ''"
+          >
+            {{ trace.context || trace.desc || trace.status || trace }}
+          </el-timeline-item>
+        </el-timeline>
+        <el-empty v-else description="暂无物流轨迹" />
+      </div>
+    </el-dialog>
 
     <!-- 详情抽屉 -->
     <el-drawer v-model="detailVisible" size="560px" :with-header="false">
@@ -572,6 +843,48 @@ function exportData() {
 }
 
 /* ---------- stats ---------- */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.page-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+.page-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #909399;
+}
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ship-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ship-form-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ship-form-label {
+  font-size: 13px;
+  color: #606266;
+}
+.logistics-panel {
+  min-height: 180px;
+}
+.logistics-timeline {
+  margin-top: 18px;
+}
+
 .stats-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

@@ -192,7 +192,44 @@ model Distributor {
 }
 
 // =====================================================================
-// 4. 商品分类 / 品牌
+// 4. 字典（工艺 / 胎质 / 标签等可配置选项）
+// =====================================================================
+
+model DictType {
+  id          Int        @id @default(autoincrement())
+  code        String     @unique @db.VarChar(64)
+  name        String     @db.VarChar(64)
+  description String?    @db.VarChar(255)
+  status      Int        @default(1)
+  sort        Int        @default(0)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  items       DictItem[]
+
+  @@map("dict_types")
+}
+
+model DictItem {
+  id          Int      @id @default(autoincrement())
+  typeCode    String   @map("type_code") @db.VarChar(64)
+  label       String   @db.VarChar(128)
+  value       String   @db.VarChar(128)
+  sort        Int      @default(0)
+  status      Int      @default(1)
+  remark      String?  @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  type        DictType @relation(fields: [typeCode], references: [code], onDelete: Cascade)
+
+  @@unique([typeCode, value])
+  @@index([typeCode, status, sort])
+  @@map("dict_items")
+}
+
+// =====================================================================
+// 5. 商品分类 / 品牌
 // =====================================================================
 
 model Category {

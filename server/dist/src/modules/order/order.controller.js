@@ -127,6 +127,9 @@ let OrderController = class OrderController {
     detail(id) {
         return this.svc.findById(id);
     }
+    logistics(id) {
+        return this.svc.getLogistics(id);
+    }
     markPaid(id) {
         return this.svc.markPaid(id);
     }
@@ -187,6 +190,13 @@ __decorate([
     __metadata("design:paramtypes", [Number]),
     __metadata("design:returntype", void 0)
 ], OrderController.prototype, "detail", null);
+__decorate([
+    (0, common_1.Get)(':id/logistics'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], OrderController.prototype, "logistics", null);
 __decorate([
     (0, common_1.Patch)(':id/mark-paid'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),

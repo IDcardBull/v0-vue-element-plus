@@ -11,7 +11,7 @@ export interface PriceTier {
 
 /** 关联 SKU 信息（作为参考） */
 export interface SkuInfo {
-  sku_id: string
+  sku_id: number
   sku_name: string
   image: string
   retail_price: number
@@ -25,7 +25,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
-  (e: 'save', payload: { sku_id: string; tiers: PriceTier[] }): void
+  (e: 'save', payload: { sku_id: number; tiers: PriceTier[] }): void
 }>()
 
 // 双向绑定 drawer 的显示
@@ -111,8 +111,6 @@ function handleSave() {
     sku_id: props.sku.sku_id,
     tiers: JSON.parse(JSON.stringify(tierList.value)),
   })
-  ElMessage.success('批发阶梯价已保存')
-  visible.value = false
 }
 
 function handleCancel() {

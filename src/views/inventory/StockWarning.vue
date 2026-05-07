@@ -53,7 +53,7 @@
           <el-input v-model="filter.keyword" placeholder="SKU / 商品名称" clearable style="width: 220px" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :icon="Search">查询</el-button>
+          <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -77,10 +77,9 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="仓库" prop="warehouseName" width="140" />
         <el-table-column label="可用库存" width="110" align="right">
           <template #default="{ row }">
-            <span :class="row.available === 0 ? 'critical' : 'warning-text'">
+            <span :class="row.warnLevel === 'urgent' ? 'critical' : 'warning-text'">
               {{ row.available }}
             </span>
           </template>
@@ -105,8 +104,8 @@
         </el-table-column>
         <el-table-column label="预警等级" width="110" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.available === 0 ? 'danger' : 'warning'" size="small" effect="dark">
-              {{ row.available === 0 ? '已缺货' : '预警中' }}
+            <el-tag :type="row.warnLevel === 'urgent' ? 'danger' : 'warning'" size="small" effect="dark">
+              {{ row.warnLevel === 'urgent' ? '已缺货' : '预警中' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -138,6 +137,7 @@ interface WarningItem {
   warningLine: number
   sales30: number
   leadTime: number
+  warnLevel: 'urgent' | 'warning' | 'excess' | 'normal'
 }
 
 const filter = reactive({
@@ -151,19 +151,25 @@ const loadError = ref('')
 async function loadWarnings() {
   loadError.value = ''
   try {
-    const res: any = await inventoryApi.warnings({})
+    const levelParam = filter.level === 'critical'
+      ? 'urgent'
+      : filter.level === 'warning'
+        ? 'warning'
+        : undefined
+    const res: any = await inventoryApi.warnings({ level: levelParam })
     const rows = (res?.list ?? res ?? []) as any[]
     list.value = (Array.isArray(rows) ? rows : []).map((r: any, i: number) => ({
       id: r.id ?? i + 1,
       sku: r.sku?.code || r.skuCode || '',
       productName: r.sku?.product?.name || r.productName || '',
       spec: r.sku?.specs || r.spec || '',
-      image: r.sku?.product?.mainImage || '/placeholder.svg?height=40&width=40',
+      image: r.sku?.image || r.sku?.product?.mainImage || '/placeholder.svg?height=40&width=40',
       warehouseName: r.warehouse?.name || r.warehouseName || '',
-      available: Number(r.available ?? 0),
-      warningLine: Number(r.warningLine ?? r.safetyStock ?? 20),
+      available: Number(r.available ?? ((r.onHand ?? 0) - (r.reserved ?? 0))),
+      warningLine: Number(r.warningLine ?? r.warnMin ?? r.safetyStock ?? 20),
       sales30: Number(r.sales30 ?? 0),
       leadTime: Number(r.leadTime ?? 10),
+      warnLevel: (r.warnLevel || 'normal') as any,
     })) as any
   } catch (e: any) {
     loadError.value = e?.message || '后端服务不可用'
@@ -175,8 +181,8 @@ onMounted(loadWarnings)
 
 const filteredList = computed(() => {
   let result = list.value
-  if (filter.level === 'critical') result = result.filter((r) => r.available === 0)
-  else if (filter.level === 'warning') result = result.filter((r) => r.available > 0)
+  if (filter.level === 'critical') result = result.filter((r) => r.warnLevel === 'urgent')
+  else if (filter.level === 'warning') result = result.filter((r) => r.warnLevel === 'warning')
   if (filter.keyword) {
     const kw = filter.keyword.toLowerCase()
     result = result.filter(
@@ -187,14 +193,18 @@ const filteredList = computed(() => {
 })
 
 const stats = computed(() => {
-  const outOfStock = list.value.filter((r) => r.available === 0).length
-  const lowStock = list.value.filter((r) => r.available > 0).length
+  const outOfStock = list.value.filter((r) => r.warnLevel === 'urgent').length
+  const lowStock = list.value.filter((r) => r.warnLevel === 'warning').length
   const inTransit = 3
   const lossAmount = list.value
     .filter((r) => r.available === 0)
     .reduce((sum, r) => sum + r.sales30 * 800, 0)
   return { outOfStock, lowStock, inTransit, lossAmount }
 })
+
+function handleSearch() {
+  loadWarnings()
+}
 
 function getDaysTag(row: WarningItem) {
   const dailySales = row.sales30 / 30

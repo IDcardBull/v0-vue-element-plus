@@ -20,6 +20,7 @@
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "echarts": "^6.0.0",
     "element-plus": "^2.9.1",
     "express": "^5.2.1",
     "passport-jwt": "^4.0.1",

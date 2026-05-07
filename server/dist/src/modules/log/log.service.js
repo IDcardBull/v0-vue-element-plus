@@ -28,6 +28,8 @@ let LogService = class LogService {
         }
         if (query.action)
             where.action = query.action;
+        if (query.module)
+            where.module = query.module;
         if (query.status)
             where.status = query.status;
         const adminUserId = query.adminUserId ?? query.operatorId;
@@ -43,6 +45,7 @@ let LogService = class LogService {
         const [list, total] = await Promise.all([
             this.prisma.operationLog.findMany({
                 where,
+                include: { adminUser: { select: { realName: true, username: true } } },
                 orderBy: { createdAt: 'desc' },
                 skip: (page - 1) * pageSize,
                 take: pageSize,

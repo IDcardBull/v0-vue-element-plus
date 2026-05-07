@@ -83,7 +83,7 @@ const _ = ref<MenuItem | null>(null)
         <div class="brand-logo">央</div>
         <transition name="fade">
           <div v-if="!isCollapse" class="brand-text">
-            <div class="brand-title">央茗陶瓷</div>
+            <div class="brand-title">央皿陶瓷</div>
             <div class="brand-subtitle">一库多端管理系统</div>
           </div>
         </transition>

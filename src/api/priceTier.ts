@@ -8,9 +8,9 @@ export interface PriceTier {
 }
 
 export function fetchTiersBySku(skuId: number) {
-  return request.get<any, PriceTier[]>(`/admin/skus/${skuId}/tiers`)
+  return request.get<any, PriceTier[]>(`/admin/price-tier/by-sku/${skuId}`)
 }
 
 export function saveTiers(skuId: number, tiers: PriceTier[]) {
-  return request.put<any, any>(`/admin/skus/${skuId}/tiers`, { tiers })
+  return request.put<any, any>(`/admin/price-tier/by-sku/${skuId}`, { tiers })
 }

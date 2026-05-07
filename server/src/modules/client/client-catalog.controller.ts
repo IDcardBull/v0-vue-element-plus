@@ -40,12 +40,19 @@ export class ClientCatalogController {
 
   /**
    * 商品列表
-   * 可用参数：categoryId、brandId、keyword、sort（sales|new|price_asc|price_desc）、page、pageSize
-   * 仅返回「已上架 + 允许零售」的商品
+   * 可用参数：categoryId、brandId、keyword、channel（retail|wholesale）、sort（sales|new|price_asc|price_desc）、page、pageSize
+   * 默认返回零售商品；批发端传 channel=wholesale。
    */
   @Public()
   @Get('products')
   products(@Query() q: any) {
+    return this.productList(q)
+  }
+
+  /** 兼容小程序端旧/新路径：/client/product/list */
+  @Public()
+  @Get('product/list')
+  productList(@Query() q: any) {
     const sortMap: Record<string, any> = {
       sales: { field: 'salesCount', order: 'desc' },
       new: { field: 'createdAt', order: 'desc' },
@@ -53,12 +60,13 @@ export class ClientCatalogController {
       price_desc: { field: 'retailPrice', order: 'desc' },
     }
     const sort = sortMap[q.sort] || sortMap.new
+    const channel = q.channel === 'wholesale' ? 'wholesale' : 'retail'
     return this.productSvc.search({
       categoryId: q.categoryId ? Number(q.categoryId) : undefined,
       brandId: q.brandId ? Number(q.brandId) : undefined,
       keyword: q.keyword,
-      status: 1, // 上架
-      channel: 'retail',
+      status: 1,
+      channel,
       page: Number(q.page) || 1,
       pageSize: Number(q.pageSize) || 10,
       sortField: sort.field,
@@ -87,6 +95,13 @@ export class ClientCatalogController {
   @Public()
   @Get('products/:id')
   productDetail(@Param('id', ParseIntPipe) id: number) {
+    return this.productSvc.findById(id)
+  }
+
+  /** 兼容小程序端路径：/client/product/:id */
+  @Public()
+  @Get('product/:id')
+  productDetailAlias(@Param('id', ParseIntPipe) id: number) {
     return this.productSvc.findById(id)
   }
 }

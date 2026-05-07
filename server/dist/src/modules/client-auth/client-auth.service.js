@@ -33,13 +33,32 @@ let ClientAuthService = class ClientAuthService {
             throw new common_1.BadRequestException('code 不能为空');
         const appid = this.config.get('WX_APPID');
         const secret = this.config.get('WX_SECRET');
-        if (!appid || !secret)
+        const devFallbackEnabled = this.config.get('WX_LOGIN_DEV_FALLBACK') === 'true';
+        if (!appid || !secret) {
+            if (devFallbackEnabled)
+                return this.devMiniLogin('missing-config');
             throw new common_1.UnauthorizedException('微信小程序未配置');
-        const url = `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${code}&grant_type=authorization_code`;
-        const { data } = await axios_1.default.get(url, { timeout: 5000 });
-        if (data.errcode)
-            throw new common_1.UnauthorizedException(`微信登录失败：${data.errmsg}`);
-        const { openid, unionid } = data;
+        }
+        try {
+            const url = `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${code}&grant_type=authorization_code`;
+            const { data } = await axios_1.default.get(url, { timeout: 5000 });
+            if (data.errcode) {
+                if (devFallbackEnabled)
+                    return this.devMiniLogin(`wechat-${data.errcode}`);
+                throw new common_1.UnauthorizedException(`微信登录失败：${data.errmsg}`);
+            }
+            const { openid, unionid } = data;
+            return this.loginByOpenid(openid, unionid || null);
+        }
+        catch (error) {
+            if (error instanceof common_1.UnauthorizedException || error instanceof common_1.BadRequestException)
+                throw error;
+            if (devFallbackEnabled)
+                return this.devMiniLogin('request-failed');
+            throw new common_1.UnauthorizedException(error?.message || '微信登录失败');
+        }
+    }
+    async loginByOpenid(openid, unionid) {
         let user = await this.prisma.user.findUnique({ where: { openid } });
         if (!user) {
             user = await this.prisma.user.create({
@@ -52,13 +71,21 @@ let ClientAuthService = class ClientAuthService {
                 data: { lastActiveAt: new Date() },
             });
         }
-        const token = await this.jwt.signAsync({
+        const token = await this.signClientToken(user);
+        return { token, user: this.sanitize(user) };
+    }
+    async devMiniLogin(reason) {
+        const openid = `dev_${this.config.get('WX_APPID') || 'mini'}_local`;
+        const result = await this.loginByOpenid(openid);
+        return { ...result, dev: true, reason };
+    }
+    signClientToken(user) {
+        return this.jwt.signAsync({
             sub: user.id,
             username: user.phone || user.openid,
             userType: 'client',
             role: user.role,
         });
-        return { token, user: this.sanitize(user) };
     }
     /**
      * 手机号+验证码登录（零售、批发 H5 通用），演示版跳过短信校验

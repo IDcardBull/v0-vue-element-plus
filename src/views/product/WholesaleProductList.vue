@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PriceTierConfig from './PriceTierConfig.vue'
 import { productApi } from '@/api/product'
+import { categoryApi } from '@/api/category'
+import { fetchTiersBySku, saveTiers } from '@/api/priceTier'
 
 const router = useRouter()
 const loading = ref(false)
@@ -20,6 +22,7 @@ export type ProductCraft =
 
 /** 分销商等级 */
 export type DealerLevel = '普通' | '白银' | '黄金' | '钻石'
+type ChannelFilter = '' | 'retail' | 'wholesale'
 
 interface PriceTier {
   min_qty: number | null
@@ -27,29 +30,31 @@ interface PriceTier {
   price: number | null
 }
 
-export interface WholesaleProduct {
+export interface ProductManageItem {
   id: string
+  sku_id?: number
   code: string
   name: string
   image: string
-  category: ProductCategory
-  craft: ProductCraft
-  retail_price_ref: number // 零售价参考
+  category: string
+  craft: string
+  retail_price_ref: number
+  retail_enabled: boolean
   wholesale_enabled: boolean
   min_wholesale_qty: number
-  tier_count: number // 阶梯档位数
-  tier_min_price: number // 最低阶梯价
-  tier_max_price: number // 最高阶梯价
-  authorized_levels: DealerLevel[] // 可批发的分销商等级
-  dealer_count: number // 关联分销商数
-  wholesale_sales_30d: number // 近 30 天批发销售额
+  tier_count: number
+  tier_min_price: number
+  tier_max_price: number
+  authorized_levels: DealerLevel[]
+  dealer_count: number
+  wholesale_sales_30d: number
   stock_available: number
   stock_warning: number
   tiers: PriceTier[]
 }
 
 interface SkuInfo {
-  sku_id: string
+  sku_id: number
   sku_name: string
   image: string
   retail_price: number
@@ -59,24 +64,36 @@ interface SkuInfo {
 
 const filter = reactive({
   keyword: '',
-  category: '' as ProductCategory | '',
+  category: '',
+  channel: '' as ChannelFilter,
+  retail: '' as '' | 'on' | 'off',
   wholesale: '' as '' | 'on' | 'off',
   level: '' as DealerLevel | '',
   stock: '' as '' | 'normal' | 'warning',
 })
 
-const categoryOptions: ProductCategory[] = ['茶器', '花器', '餐具', '酒器', '摆件']
+const categoryOptions = ref<string[]>([])
 const levelOptions: DealerLevel[] = ['普通', '白银', '黄金', '钻石']
 
 const page = reactive({ current: 1, size: 10 })
-const products = ref<WholesaleProduct[]>([])
+const products = ref<ProductManageItem[]>([])
 const loadError = ref('')
+
+async function loadCategories() {
+  try {
+    const res = await categoryApi.tree()
+    const flatten = (list: any[]): any[] => list.flatMap((item) => [item, ...flatten(item.children || [])])
+    categoryOptions.value = flatten(Array.isArray(res) ? res : (res as any)?.list || []).map((item) => item.name)
+  } catch {
+    categoryOptions.value = []
+  }
+}
 
 async function loadList() {
   loading.value = true
   loadError.value = ''
   try {
-    const res: any = await productApi.list({ page: 1, pageSize: 100, channel: 'wholesale' })
+    const res: any = await productApi.list({ page: 1, pageSize: 100 })
     const rows = (res?.list ?? []) as any[]
     products.value = rows.map((r: any) => {
       const sku = r.skus?.[0] || {}
@@ -87,13 +104,15 @@ async function loadList() {
       }))
       return {
         id: String(r.id),
+        sku_id: sku.id,
         code: r.code || sku.code || '',
         name: r.name,
         image: r.mainImage || r.coverImage || '/placeholder.svg',
-        category: (r.category?.name as ProductCategory) || '茶器',
-        craft: (r.craft as ProductCraft) || '青花瓷',
+        category: r.category?.name || '未分类',
+        craft: r.craft || '',
         retail_price_ref: Number(sku.retailPrice ?? r.retailPrice ?? 0),
-        wholesale_enabled: r.wholesaleEnabled !== false,
+        retail_enabled: r.retailEnabled === true,
+        wholesale_enabled: r.wholesaleEnabled === true,
         min_wholesale_qty: Number(sku.minOrderQty ?? r.minWholesaleQty ?? 1),
         tier_count: tiers.length || Number(r.priceTierCount ?? 0),
         tier_min_price: Number(r.tierMinPrice ?? tiers[tiers.length - 1]?.price ?? 0),
@@ -114,7 +133,10 @@ async function loadList() {
   }
 }
 
-onMounted(loadList)
+onMounted(() => {
+  loadCategories()
+  loadList()
+})
 
 const filteredList = computed(() => {
   return products.value.filter((p) => {
@@ -125,6 +147,10 @@ const filteredList = computed(() => {
     )
       return false
     if (filter.category && p.category !== filter.category) return false
+    if (filter.channel === 'retail' && !p.retail_enabled) return false
+    if (filter.channel === 'wholesale' && !p.wholesale_enabled) return false
+    if (filter.retail === 'on' && !p.retail_enabled) return false
+    if (filter.retail === 'off' && p.retail_enabled) return false
     if (filter.wholesale === 'on' && !p.wholesale_enabled) return false
     if (filter.wholesale === 'off' && p.wholesale_enabled) return false
     if (filter.level && !p.authorized_levels.includes(filter.level)) return false
@@ -145,10 +171,10 @@ const pagedList = computed(() => {
 
 const stats = computed(() => {
   const total = products.value.length
-  const enabled = products.value.filter((p) => p.wholesale_enabled).length
-  const dealers = Math.max(...products.value.map((p) => p.dealer_count), 0)
-  const sales30d = products.value.reduce((s, p) => s + p.wholesale_sales_30d, 0)
-  return { total, enabled, dealers, sales30d }
+  const retailEnabled = products.value.filter((p) => p.retail_enabled).length
+  const wholesaleEnabled = products.value.filter((p) => p.wholesale_enabled).length
+  const bothEnabled = products.value.filter((p) => p.retail_enabled && p.wholesale_enabled).length
+  return { total, retailEnabled, wholesaleEnabled, bothEnabled }
 })
 
 /* ===================== 操作 ===================== */
@@ -161,41 +187,59 @@ function handleSearch() {
 function handleReset() {
   filter.keyword = ''
   filter.category = ''
+  filter.channel = ''
+  filter.retail = ''
   filter.wholesale = ''
   filter.level = ''
   filter.stock = ''
   page.current = 1
 }
 
-function toggleWholesale(row: WholesaleProduct, val: boolean | string | number) {
-  row.wholesale_enabled = Boolean(val)
-  ElMessage.success(
-    `${row.name} 已${row.wholesale_enabled ? '开启' : '关闭'}批发`,
-  )
+async function toggleRetail(row: ProductManageItem, val: boolean | string | number) {
+  const next = Boolean(val)
+  try {
+    await productApi.toggleChannel(Number(row.id), 'retail', next)
+    row.retail_enabled = next
+    ElMessage.success(`${row.name} 已${next ? '开启' : '关闭'}零售`)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '状态更新失败')
+  }
+}
+
+async function toggleWholesale(row: ProductManageItem, val: boolean | string | number) {
+  const next = Boolean(val)
+  try {
+    await productApi.toggleChannel(Number(row.id), 'wholesale', next)
+    row.wholesale_enabled = next
+    ElMessage.success(`${row.name} 已${next ? '开启' : '关闭'}批发`)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '状态更新失败')
+  }
 }
 
 function handleCreate() {
-  router.push({ path: '/product/create', query: { channel: 'wholesale' } })
+  router.push('/product/create')
 }
-function handleEdit(row: WholesaleProduct) {
+function handleEdit(row: ProductManageItem) {
   router.push({
     path: '/product/edit',
-    query: { id: row.id, channel: 'wholesale' },
+    query: { id: row.id },
   })
 }
-function handleSku(row: WholesaleProduct) {
+function handleSku(row: ProductManageItem) {
   ElMessage.info(`SKU 配置：${row.name}`)
 }
-function handleAuthorize(row: WholesaleProduct) {
+function handleAuthorize(row: ProductManageItem) {
   ElMessage.info(`设置可批发等级：${row.name}`)
 }
-async function handleStopWholesale(row: WholesaleProduct) {
+async function handleStopWholesale(row: ProductManageItem) {
   try {
     await ElMessageBox.confirm(
       `确定停止「${row.name}」的批发供货吗？所有等级的分销商将无法下单。`,
       '停批确认',
       { type: 'warning' },
     )
+    await productApi.toggleChannel(Number(row.id), 'wholesale', false)
     row.wholesale_enabled = false
     ElMessage.success('已停止批发')
   } catch {
@@ -210,23 +254,47 @@ const currentSku = ref<SkuInfo | null>(null)
 const currentTiers = ref<PriceTier[]>([])
 const currentRowId = ref<string>('')
 
-function openPriceTier(row: WholesaleProduct) {
+async function openPriceTier(row: ProductManageItem) {
   if (!row.wholesale_enabled) {
     ElMessage.warning('该商品未开启批发，无法配置阶梯价')
     return
   }
+  if (!row.sku_id) {
+    ElMessage.warning('该商品暂无可配置阶梯价的 SKU')
+    return
+  }
   currentSku.value = {
-    sku_id: row.code,
+    sku_id: row.sku_id,
     sku_name: row.name,
     image: row.image,
     retail_price: row.retail_price_ref,
   }
-  currentTiers.value = [...row.tiers]
+  try {
+    const dbTiers = await fetchTiersBySku(row.sku_id)
+    currentTiers.value = (dbTiers || []).map((tier: any) => ({
+      min_qty: Number(tier.minQty ?? tier.min_qty ?? 1),
+      max_qty: tier.maxQty ?? tier.max_qty ?? null,
+      price: Number(tier.price ?? 0),
+    }))
+  } catch (error: any) {
+    ElMessage.error(error?.message || '阶梯价加载失败')
+    return
+  }
   currentRowId.value = row.id
   tierDrawerVisible.value = true
 }
 
-function handleTierSave(payload: { sku_id: string; tiers: PriceTier[] }) {
+async function handleTierSave(payload: { sku_id: number; tiers: PriceTier[] }) {
+  try {
+    await saveTiers(payload.sku_id, payload.tiers.map((tier) => ({
+      minQty: Number(tier.min_qty || 0),
+      maxQty: tier.max_qty === null ? null : Number(tier.max_qty),
+      price: Number(tier.price || 0),
+    })))
+  } catch (error: any) {
+    ElMessage.error(error?.message || '阶梯价保存失败')
+    return
+  }
   const row = products.value.find((p) => p.id === currentRowId.value)
   if (row) {
     row.tiers = payload.tiers
@@ -243,7 +311,8 @@ function handleTierSave(payload: { sku_id: string; tiers: PriceTier[] }) {
       row.min_wholesale_qty = firstMin
     }
   }
-  console.log('[v0] 保存阶梯价', payload)
+  ElMessage.success('阶梯价已保存')
+  tierDrawerVisible.value = false
 }
 
 function levelTagType(l: DealerLevel) {
@@ -262,7 +331,7 @@ function levelTagType(l: DealerLevel) {
 </script>
 
 <template>
-  <div class="wholesale-product">
+  <div class="product-manage">
     <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
       <template #default>
         <span>后端服务不可用。</span>
@@ -272,28 +341,28 @@ function levelTagType(l: DealerLevel) {
     <!-- 顶部统计 -->
     <div class="stat-row">
       <el-card shadow="never" class="stat-card">
-        <div class="stat-label">批发 SKU 总数</div>
+        <div class="stat-label">商品总数</div>
         <div class="stat-value">{{ stats.total }}</div>
-        <div class="stat-sub">含未开启批发的商品</div>
+        <div class="stat-sub">零售 / 批发统一管理</div>
       </el-card>
       <el-card shadow="never" class="stat-card">
-        <div class="stat-label">已开启批发</div>
-        <div class="stat-value success">{{ stats.enabled }}</div>
+        <div class="stat-label">零售上架</div>
+        <div class="stat-value success">{{ stats.retailEnabled }}</div>
         <div class="stat-sub">
-          占比 {{ Math.round((stats.enabled / Math.max(stats.total, 1)) * 100) }}%
+          占比 {{ Math.round((stats.retailEnabled / Math.max(stats.total, 1)) * 100) }}%
         </div>
       </el-card>
       <el-card shadow="never" class="stat-card">
-        <div class="stat-label">关联分销商</div>
-        <div class="stat-value primary">{{ stats.dealers }}</div>
-        <div class="stat-sub">最多覆盖分销商数</div>
+        <div class="stat-label">批发上架</div>
+        <div class="stat-value primary">{{ stats.wholesaleEnabled }}</div>
+        <div class="stat-sub">可在批发端展示</div>
       </el-card>
       <el-card shadow="never" class="stat-card">
-        <div class="stat-label">近 30 天批发额</div>
+        <div class="stat-label">双端上架</div>
         <div class="stat-value danger">
-          ¥ {{ stats.sales30d.toLocaleString() }}
+          {{ stats.bothEnabled }}
         </div>
-        <div class="stat-sub">全渠道批发合计</div>
+        <div class="stat-sub">零售和批发同时展示</div>
       </el-card>
     </div>
 
@@ -316,6 +385,28 @@ function levelTagType(l: DealerLevel) {
             style="width: 140px"
           >
             <el-option v-for="c in categoryOptions" :key="c" :label="c" :value="c" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="销售渠道">
+          <el-select
+            v-model="filter.channel"
+            placeholder="全部商品"
+            clearable
+            style="width: 130px"
+          >
+            <el-option label="零售商品" value="retail" />
+            <el-option label="批发商品" value="wholesale" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="零售状态">
+          <el-select
+            v-model="filter.retail"
+            placeholder="全部"
+            clearable
+            style="width: 120px"
+          >
+            <el-option label="已开启" value="on" />
+            <el-option label="未开启" value="off" />
           </el-select>
         </el-form-item>
         <el-form-item label="批发状态">
@@ -351,7 +442,7 @@ function levelTagType(l: DealerLevel) {
         </el-form-item>
         <el-form-item class="form-item-right">
           <el-button type="success" :icon="'Plus'" @click="handleCreate">
-            新增批发商品
+            新增商品
           </el-button>
         </el-form-item>
       </el-form>
@@ -379,7 +470,7 @@ function levelTagType(l: DealerLevel) {
           </template>
         </el-table-column>
 
-        <el-table-column label="商品编�� / 名称" min-width="220">
+        <el-table-column label="商品编码 / 名称" min-width="220">
           <template #default="{ row }">
             <div class="cell-code">{{ row.code }}</div>
             <div class="cell-name">{{ row.name }}</div>
@@ -479,6 +570,19 @@ function levelTagType(l: DealerLevel) {
           </template>
         </el-table-column>
 
+        <el-table-column label="零售开关" width="100" align="center">
+          <template #default="{ row }">
+            <el-switch
+              :model-value="row.retail_enabled"
+              inline-prompt
+              active-text="开启"
+              inactive-text="关闭"
+              style="--el-switch-on-color: #409eff; --el-switch-off-color: #909399"
+              @update:model-value="(v: string | number | boolean) => toggleRetail(row, Boolean(v))"
+            />
+          </template>
+        </el-table-column>
+
         <el-table-column label="批发开关" width="100" align="center">
           <template #default="{ row }">
             <el-switch
@@ -532,7 +636,7 @@ function levelTagType(l: DealerLevel) {
 </template>
 
 <style scoped>
-.wholesale-product {
+.product-manage {
   display: flex;
   flex-direction: column;
   gap: 16px;

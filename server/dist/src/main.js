@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("@nestjs/core");
 const common_1 = require("@nestjs/common");
+const node_path_1 = require("node:path");
 const app_module_1 = require("./app.module");
 const response_interceptor_1 = require("./common/interceptors/response.interceptor");
 const http_exception_filter_1 = require("./common/filters/http-exception.filter");
@@ -10,6 +11,7 @@ async function bootstrap() {
         logger: ['error', 'warn', 'log'],
         rawBody: true, // 微信支付回调解密需要读取原始 body
     });
+    app.useStaticAssets((0, node_path_1.join)(process.cwd(), 'uploads'), { prefix: '/uploads/' });
     // 全局前缀
     app.setGlobalPrefix('api');
     // 全局 DTO 校验

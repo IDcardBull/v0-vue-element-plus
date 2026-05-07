@@ -24,25 +24,35 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'product',
         name: 'Product',
-        redirect: '/product/retail',
+        redirect: '/product/manage',
         meta: { title: '商品管理' },
         children: [
           {
             path: 'list',
-            redirect: '/product/retail',
+            redirect: '/product/manage',
             meta: { hidden: true },
           },
           {
             path: 'retail',
-            name: 'ProductRetail',
-            component: () => import('@/views/product/RetailProductList.vue'),
-            meta: { title: '零售商品' },
+            redirect: '/product/manage',
+            meta: { hidden: true },
           },
           {
             path: 'wholesale',
-            name: 'ProductWholesale',
+            redirect: '/product/manage',
+            meta: { hidden: true },
+          },
+          {
+            path: 'manage',
+            name: 'ProductManage',
             component: () => import('@/views/product/WholesaleProductList.vue'),
-            meta: { title: '批发商品' },
+            meta: { title: '管理商品' },
+          },
+          {
+            path: 'retail-banners',
+            name: 'ProductRetailBanners',
+            component: () => import('@/views/product/HomeBannerConfig.vue'),
+            meta: { title: '轮播图设置', hidden: true },
           },
           {
             path: 'create',
@@ -67,6 +77,12 @@ const routes: RouteRecordRaw[] = [
             name: 'ProductBrand',
             component: () => import('@/views/product/BrandList.vue'),
             meta: { title: '品牌管理' },
+          },
+          {
+            path: 'craft-material',
+            name: 'ProductCraftMaterial',
+            component: () => import('@/views/product/CraftMaterialList.vue'),
+            meta: { title: '工艺胎质' },
           },
         ],
       },

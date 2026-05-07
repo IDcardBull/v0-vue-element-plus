@@ -51,6 +51,7 @@ const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const axios_1 = __importDefault(require("axios"));
 // wechatpay-node-v3 是主流的微信支付 V3 SDK
 const wechatpay_node_v3_1 = __importDefault(require("wechatpay-node-v3"));
 /**
@@ -142,6 +143,95 @@ let WechatPayService = WechatPayService_1 = class WechatPayService {
             signType: 'RSA',
             paySign,
         };
+    }
+    async getMiniProgramAccessToken() {
+        const now = Date.now();
+        if (this.accessTokenCache && this.accessTokenCache.expiresAt > now + 60_000) {
+            return this.accessTokenCache.token;
+        }
+        const appid = this.config.get('WX_APPID');
+        const secret = this.config.get('WX_SECRET');
+        if (!appid || !secret) {
+            throw new common_1.ServiceUnavailableException('微信小程序未配置，无法调用发货信息录入接口');
+        }
+        const { data } = await axios_1.default.get('https://api.weixin.qq.com/cgi-bin/token', {
+            params: { grant_type: 'client_credential', appid, secret },
+            timeout: 5000,
+        });
+        if (!data?.access_token) {
+            throw new common_1.InternalServerErrorException(data?.errmsg || '获取微信 access_token 失败');
+        }
+        this.accessTokenCache = {
+            token: data.access_token,
+            expiresAt: now + Number(data.expires_in || 7200) * 1000,
+        };
+        return data.access_token;
+    }
+    async uploadShippingInfo(params) {
+        if (!params.transactionId || !params.openid) {
+            this.logger.warn(`[WechatPay] 跳过发货信息录入: transactionId/openid 缺失, order=${params.outTradeNo}`);
+            return { skipped: true, reason: 'missing_transaction_or_openid' };
+        }
+        const accessToken = await this.getMiniProgramAccessToken();
+        const payload = {
+            order_key: { order_number_type: 2, transaction_id: params.transactionId },
+            logistics_type: 1,
+            delivery_mode: 1,
+            shipping_list: [{ tracking_no: params.trackingNo, express_company: params.logisticsCompany }],
+            upload_time: Math.floor(Date.now() / 1000),
+            payer: { openid: params.openid },
+        };
+        const { data } = await axios_1.default.post(`https://api.weixin.qq.com/wxa/sec/order/upload_shipping_info?access_token=${accessToken}`, payload, { timeout: 8000 });
+        if (data?.errcode && data.errcode !== 0) {
+            this.logger.warn(`[WechatPay] 发货信息录入失败: ${JSON.stringify(data)}`);
+            return { skipped: false, success: false, data };
+        }
+        return { skipped: false, success: true, data };
+    }
+    async queryLogistics(params) {
+        if (!params.logisticsCompany || !params.trackingNo) {
+            return {
+                supported: false,
+                message: '物流公司或物流单号缺失',
+                company: params.logisticsCompany || '',
+                trackingNo: params.trackingNo || '',
+                traces: [],
+            };
+        }
+        return {
+            supported: false,
+            message: '暂未接入第三方物流轨迹服务，请后续对接快递100或快递鸟',
+            company: params.logisticsCompany,
+            trackingNo: params.trackingNo,
+            traces: [],
+        };
+    }
+    async sendShippingSubscribeMessage(params) {
+        const templateId = this.config.get('WX_SUBSCRIBE_SHIPPED_TEMPLATE_ID');
+        if (!templateId) {
+            return { skipped: true, reason: 'template_not_configured' };
+        }
+        if (!params.openid) {
+            return { skipped: true, reason: 'missing_openid' };
+        }
+        const accessToken = await this.getMiniProgramAccessToken();
+        const payload = {
+            touser: params.openid,
+            template_id: templateId,
+            page: `pages/order/detail?orderNo=${encodeURIComponent(params.orderNo)}`,
+            data: {
+                thing1: { value: '订单已发货' },
+                character_string2: { value: params.orderNo.slice(0, 32) },
+                thing3: { value: params.logisticsCompany.slice(0, 20) },
+                character_string4: { value: params.trackingNo.slice(0, 32) },
+            },
+        };
+        const { data } = await axios_1.default.post(`https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=${accessToken}`, payload, { timeout: 8000 });
+        if (data?.errcode && data.errcode !== 0) {
+            this.logger.warn(`[WechatPay] 订阅消息发送失败: ${JSON.stringify(data)}`);
+            return { skipped: false, success: false, data };
+        }
+        return { skipped: false, success: true, data };
     }
     /**
      * 校验并解密支付回调

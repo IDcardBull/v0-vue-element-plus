@@ -18,6 +18,8 @@ import { OrderModule } from './modules/order/order.module'
 import { UserModule } from './modules/user/user.module'
 import { ClientAuthModule } from './modules/client-auth/client-auth.module'
 import { ClientModule } from './modules/client/client.module'
+import { UploadModule } from './modules/upload/upload.module'
+import { DictModule } from './modules/dict/dict.module'
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { ClientModule } from './modules/client/client.module'
     UserModule,
     ClientAuthModule,
     ClientModule,
+    UploadModule,
+    DictModule,
   ],
   providers: [
     // 默认所有路由需要 JWT；接口上用 @Public() 放行

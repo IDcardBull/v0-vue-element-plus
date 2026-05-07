@@ -5,7 +5,7 @@
         <h2 class="page-title">操作日志</h2>
         <p class="page-subtitle">系统关键操作审计，保留 365 天</p>
       </div>
-      <el-button :icon="Download">导出日志</el-button>
+      <el-button :icon="Download" @click="exportLogs">导出日志</el-button>
     </div>
 
     <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" style="margin-bottom: 12px">
@@ -52,7 +52,7 @@
           />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :icon="Search">查询</el-button>
+          <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
           <el-button :icon="RefreshLeft" @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -102,6 +102,8 @@
           :page-sizes="[20, 50, 100]"
           layout="total, sizes, prev, pager, next, jumper"
           background
+          @current-change="loadLogs"
+          @size-change="loadLogs"
         />
       </div>
     </el-card>
@@ -169,19 +171,31 @@ const loadError = ref('')
 async function loadLogs() {
   loadError.value = ''
   try {
-    const res: any = await logApi.list({ page: 1, pageSize: 100 })
+    const params: any = {
+      page: pagination.page,
+      pageSize: pagination.size,
+    }
+    if (filter.operator) params.keyword = filter.operator
+    if (filter.module) params.module = filter.module
+    if (filter.action) params.action = filter.action
+    if (filter.status) params.status = filter.status
+    if (filter.dateRange?.length === 2) {
+      params.startTime = filter.dateRange[0]
+      params.endTime = filter.dateRange[1]
+    }
+    const res: any = await logApi.list(params)
     const rows = (res?.list ?? []) as any[]
     logList.value = rows.map((r: any, i: number) => ({
       id: r.id ?? i + 1,
       time: r.createdAt || r.time || '',
-      name: r.operator?.realName || r.name || '',
-      account: r.operator?.username || r.account || '',
+      name: r.adminUser?.realName || r.operator?.realName || r.username || r.name || '',
+      account: r.username || r.operator?.username || r.account || '',
       module: r.module || '',
       action: r.action || 'update',
       desc: r.description || r.desc || '',
       ip: r.ip || '',
       status: r.status || 'success',
-      duration: Number(r.duration ?? 0),
+      duration: Number(r.durationMs ?? r.duration ?? 0),
     })) as any
     pagination.total = Number(res?.total ?? logList.value.length)
   } catch (e: any) {
@@ -212,9 +226,50 @@ const mockParams = `{
   "userAgent": "Mozilla/5.0 ... Chrome/124.0"
 }`
 
+function escapeCsvCell(value: unknown) {
+  const text = String(value ?? '')
+  if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`
+  return text
+}
+
+function downloadCsv(filename: string, header: string[], rows: Array<Array<unknown>>) {
+  const csv = [header, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\r\n')
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportLogs() {
+  const rows = logList.value.map((r) => [
+    r.time,
+    r.name,
+    r.account,
+    r.module,
+    actionText(r.action),
+    r.desc,
+    r.ip,
+    r.status === 'success' ? '成功' : '失败',
+    r.duration,
+  ])
+  downloadCsv(
+    `操作日志-${new Date().toISOString().slice(0, 10)}.csv`,
+    ['时间', '操作人', '账号', '模块', '操作', '描述', 'IP', '结果', '耗时(ms)'],
+    rows,
+  )
+}
+
 function handleDetail(row: LogItem) {
   currentLog.value = row
   detailVisible.value = true
+}
+
+function handleSearch() {
+  pagination.page = 1
+  loadLogs()
 }
 
 function handleReset() {
@@ -223,6 +278,7 @@ function handleReset() {
   filter.action = ''
   filter.status = ''
   filter.dateRange = []
+  handleSearch()
 }
 </script>
 

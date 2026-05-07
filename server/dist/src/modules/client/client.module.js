@@ -34,6 +34,7 @@ exports.ClientModule = ClientModule = __decorate([
             client_user_controller_1.ClientUserController,
             client_address_controller_1.ClientAddressController,
             client_order_controller_1.ClientOrderController,
+            client_order_controller_1.ClientOrderCompatController,
             client_pay_controller_1.ClientPayController,
         ],
         providers: [client_address_service_1.ClientAddressService, wechat_pay_service_1.WechatPayService],

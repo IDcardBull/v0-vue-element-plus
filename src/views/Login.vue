@@ -6,7 +6,7 @@
         <div class="brand-logo">
           <el-icon :size="40"><Coffee /></el-icon>
         </div>
-        <h1 class="brand-title">央茗陶瓷</h1>
+        <h1 class="brand-title">央皿陶瓷</h1>
         <p class="brand-sub">一库多端后台管理系统</p>
       </div>
 
@@ -54,7 +54,7 @@
       </div>
 
       <div class="login-footer">
-        <span>© 2026 央茗陶瓷 · 一库多端管理系统</span>
+        <span>© 2026 央皿陶瓷 · 一库多端管理系统</span>
       </div>
     </div>
   </div>

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common'
 import { PrismaService } from '../../common/prisma.service'
+import { LogService } from '../log/log.service'
 import * as bcrypt from 'bcryptjs'
 
 /** 前端传入的 status 可能是 'active'/'inactive' 字符串，数据库是 Int（1/0） */
@@ -24,7 +25,10 @@ function flattenAdminUser(user: any) {
 
 @Injectable()
 export class AccountService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private logService: LogService,
+  ) {}
 
   async findAll(query: { page?: number; pageSize?: number; keyword?: string; status?: any; roleId?: number }) {
     const page = Number(query.page) || 1

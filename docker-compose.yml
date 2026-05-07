@@ -60,6 +60,8 @@ services:
       COS_REGION: ${COS_REGION:-ap-guangzhou}
     ports:
       - '3001:3001'
+    volumes:
+      - ./server/uploads:/app/uploads
 
   web:
     build:

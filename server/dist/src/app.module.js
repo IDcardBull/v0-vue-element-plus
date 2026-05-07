@@ -27,6 +27,8 @@ const order_module_1 = require("./modules/order/order.module");
 const user_module_1 = require("./modules/user/user.module");
 const client_auth_module_1 = require("./modules/client-auth/client-auth.module");
 const client_module_1 = require("./modules/client/client.module");
+const upload_module_1 = require("./modules/upload/upload.module");
+const dict_module_1 = require("./modules/dict/dict.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -50,6 +52,8 @@ exports.AppModule = AppModule = __decorate([
             user_module_1.UserModule,
             client_auth_module_1.ClientAuthModule,
             client_module_1.ClientModule,
+            upload_module_1.UploadModule,
+            dict_module_1.DictModule,
         ],
         providers: [
             // 默认所有路由需要 JWT；接口上用 @Public() 放行

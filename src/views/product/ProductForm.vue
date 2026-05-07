@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadRequestOptions } from 'element-plus'
 import { Plus, Delete, ArrowLeft } from '@element-plus/icons-vue'
+import { uploadApi } from '@/api/upload'
+import { productApi } from '@/api/product'
+import { categoryApi } from '@/api/category'
+import { brandApi } from '@/api/brand'
+import { dictApi } from '@/api/dict'
 
 /* ----------------------------------- 类型 ---------------------------------- */
 interface SpecValue {
@@ -15,10 +20,13 @@ interface SpecGroup {
   values: SpecValue[]
 }
 interface SkuRow {
+  id?: number
   key: string
   combo: Record<string, string>
   sku_code: string
-  price: number | null
+  sku_image: string
+  retail_price: number | null
+  wholesale_price: number | null
   cost: number | null
   stock: number | null
   enabled: boolean
@@ -36,6 +44,7 @@ interface ProductFormModel {
   market_price: number | null
   stock_warning: number | null
   wholesale_enabled: boolean
+  app_scope: Array<'retail' | 'wholesale'>
   min_wholesale_qty: number | null
   unit: string
   weight: number | null
@@ -67,6 +76,7 @@ const form = reactive<ProductFormModel>({
   market_price: null,
   stock_warning: 10,
   wholesale_enabled: true,
+  app_scope: ['retail'],
   min_wholesale_qty: 6,
   unit: '件',
   weight: null,
@@ -81,37 +91,14 @@ const rules: FormRules<ProductFormModel> = {
   code: [{ required: true, message: '请输入商品编码', trigger: 'blur' }],
   category_id: [{ required: true, message: '请选择商品分类', trigger: 'change' }],
   craft: [{ required: true, message: '请选择工艺', trigger: 'change' }],
-  retail_price: [{ required: true, message: '请输入零售价', trigger: 'blur' }],
   unit: [{ required: true, message: '请输入单位', trigger: 'blur' }],
 }
 
 /* --------------------------------- 选项数据 -------------------------------- */
-const categoryOptions = [
-  { value: 'cat-1', label: '茶具' },
-  { value: 'cat-2', label: '花瓶' },
-  { value: 'cat-3', label: '餐具' },
-  { value: 'cat-4', label: '摆件' },
-  { value: 'cat-5', label: '茶杯' },
-]
-const brandOptions = [
-  { value: 'brand-1', label: '央茗' },
-  { value: 'brand-2', label: '景德镇官窑' },
-  { value: 'brand-3', label: '汝窑传承' },
-]
-const craftOptions = [
-  { value: '青花', label: '青花' },
-  { value: '釉里红', label: '釉里红' },
-  { value: '粉彩', label: '粉彩' },
-  { value: '汝窑', label: '汝窑' },
-  { value: '玉瓷', label: '玉瓷' },
-  { value: '结晶釉', label: '结晶釉' },
-]
-const materialOptions = [
-  { value: '高岭土', label: '高岭土' },
-  { value: '紫砂', label: '紫砂' },
-  { value: '骨瓷', label: '骨瓷' },
-  { value: '青瓷土', label: '青瓷土' },
-]
+const categoryOptions = ref<{ value: string; label: string }[]>([])
+const brandOptions = ref<{ value: string; label: string }[]>([])
+const craftOptions = ref<{ value: string; label: string }[]>([])
+const materialOptions = ref<{ value: string; label: string }[]>([])
 const tagOptions = ['新品', '热销', '礼盒', '手作', '限量', '非遗']
 
 /* ---------------------------------- 规格 ---------------------------------- */
@@ -200,7 +187,9 @@ function regenerateSkuMatrix() {
         key,
         combo,
         sku_code: '',
-        price: form.retail_price,
+        sku_image: '',
+        retail_price: 0,
+        wholesale_price: form.market_price,
         cost: null,
         stock: 0,
         enabled: true,
@@ -214,13 +203,20 @@ const activeSpecHeaders = computed(() =>
 )
 
 /* --------------------------------- 批量填充 -------------------------------- */
-const batchPrice = ref<number | null>(null)
+const batchRetailPrice = ref<number | null>(null)
+const batchWholesalePrice = ref<number | null>(null)
 const batchStock = ref<number | null>(null)
 
-function applyBatchPrice() {
-  if (batchPrice.value === null) return
-  skuList.value.forEach((r) => (r.price = batchPrice.value))
-  ElMessage.success('已批量设置售价')
+function applyBatchRetailPrice() {
+  if (batchRetailPrice.value === null) return
+  skuList.value.forEach((r) => (r.retail_price = batchRetailPrice.value))
+  ElMessage.success('已批量设置零售价')
+}
+
+function applyBatchWholesalePrice() {
+  if (batchWholesalePrice.value === null) return
+  skuList.value.forEach((r) => (r.wholesale_price = batchWholesalePrice.value))
+  ElMessage.success('已批量设置批发价')
 }
 function applyBatchStock() {
   if (batchStock.value === null) return
@@ -229,25 +225,256 @@ function applyBatchStock() {
 }
 
 /* ---------------------------------- 图片 ---------------------------------- */
-// 演示用占位图，真实环境对接上传接口
-const defaultMainImg = '/placeholder.svg?height=120&width=120'
-const defaultGalleryImgs = ['/placeholder.svg?height=80&width=80']
+const mainImageUploading = ref(false)
+const galleryUploading = ref(false)
 
-function handleMainUpload() {
-  form.main_image = defaultMainImg
-  ElMessage.success('主图已上传')
+function validateImageFile(file: File) {
+  const isImage = file.type.startsWith('image/')
+  const isLt5M = file.size / 1024 / 1024 < 5
+  if (!isImage) {
+    ElMessage.error('只能上传图片文件')
+    return false
+  }
+  if (!isLt5M) {
+    ElMessage.error('图片大小不能超过 5MB')
+    return false
+  }
+  return true
 }
-function addGalleryImage() {
+
+async function uploadImageFile(options: UploadRequestOptions) {
+  const file = options.file
+  if (!validateImageFile(file)) {
+    options.onError(new Error('图片校验失败') as any)
+    return ''
+  }
+  try {
+    const res = await uploadApi.file(file)
+    if (!res?.url) throw new Error('上传接口未返回图片地址')
+    options.onSuccess(res)
+    return res.url
+  } catch (error) {
+    options.onError(error as any)
+    ElMessage.error((error as Error)?.message || '图片上传失败')
+    return ''
+  }
+}
+
+async function handleMainUpload(options: UploadRequestOptions) {
+  mainImageUploading.value = true
+  const url = await uploadImageFile(options)
+  if (url) {
+    form.main_image = url
+    ElMessage.success('主图上传成功')
+  }
+  mainImageUploading.value = false
+}
+
+async function handleGalleryUpload(options: UploadRequestOptions) {
   if (form.gallery.length >= 8) {
     ElMessage.warning('最多 8 张')
+    options.onError(new Error('最多 8 张') as any)
     return
   }
-  form.gallery.push(defaultGalleryImgs[0])
+  galleryUploading.value = true
+  const url = await uploadImageFile(options)
+  if (url) {
+    form.gallery.push(url)
+    ElMessage.success('轮播图上传成功')
+  }
+  galleryUploading.value = false
 }
+
 function removeGalleryImage(idx: number) {
   form.gallery.splice(idx, 1)
 }
 
+async function handleSkuImageUpload(options: UploadRequestOptions, row: SkuRow) {
+  const url = await uploadImageFile(options)
+  if (url) {
+    row.sku_image = url
+    ElMessage.success('SKU 图片上传成功')
+  }
+}
+
+function clearSkuImage(row: SkuRow) {
+  row.sku_image = ''
+}
+
+function getSkuUploadHandler(row: SkuRow) {
+  return (options: UploadRequestOptions) => handleSkuImageUpload(options, row)
+}
+
+function flattenCategories(list: any[]): any[] {
+  return list.flatMap((item) => [item, ...flattenCategories(item.children || [])])
+}
+
+async function loadOptions() {
+  try {
+    const [categories, brands, crafts, materials] = await Promise.all([
+      categoryApi.tree(),
+      brandApi.list({ page: 1, pageSize: 100 }),
+      dictApi.items('craft'),
+      dictApi.items('material'),
+    ])
+    categoryOptions.value = flattenCategories(categories || []).map((item) => ({
+      value: String(item.id),
+      label: `${'　'.repeat(Math.max(Number(item.level || 1) - 1, 0))}${item.name}`,
+    }))
+    brandOptions.value = (brands?.list || []).map((item) => ({
+      value: String(item.id),
+      label: item.name,
+    }))
+    craftOptions.value = (crafts || []).map((item) => ({ value: item.value, label: item.label }))
+    materialOptions.value = (materials || []).map((item) => ({ value: item.value, label: item.label }))
+  } catch (error) {
+    ElMessage.error('分类或品牌加载失败')
+  }
+}
+
+function normalizeImageList(images: unknown): string[] {
+  return Array.isArray(images) ? images.filter((item): item is string => typeof item === 'string' && !!item) : []
+}
+
+function rebuildSpecsFromSkus(skus: any[]) {
+  const specsList = skus.map((sku) => sku.specs || {}).filter((specs) => Object.keys(specs).length > 0)
+  if (specsList.length === 0) return
+
+  const groupMap = new Map<string, Set<string>>()
+  specsList.forEach((specs) => {
+    Object.entries(specs).forEach(([name, value]) => {
+      if (!groupMap.has(name)) groupMap.set(name, new Set())
+      if (value !== undefined && value !== null) groupMap.get(name)?.add(String(value))
+    })
+  })
+
+  specGroups.value = Array.from(groupMap.entries()).map(([name, values], index) => ({
+    id: `s-${index + 1}`,
+    name,
+    values: Array.from(values).map((value, valueIndex) => ({
+      id: `sv-${index + 1}-${valueIndex + 1}`,
+      value,
+    })),
+  }))
+}
+
+function fillSkuList(skus: any[]) {
+  if (!Array.isArray(skus) || skus.length === 0) {
+    regenerateSkuMatrix()
+    return
+  }
+  rebuildSpecsFromSkus(skus)
+  skuList.value = skus.map((sku, index) => {
+    const combo = sku.specs || {}
+    return {
+      id: sku.id,
+      key: Object.values(combo).join('|') || `sku-${sku.id || index}`,
+      combo,
+      sku_code: sku.code || '',
+      sku_image: sku.image || '',
+      retail_price: Number(sku.retailPrice ?? form.retail_price ?? 0),
+      wholesale_price: sku.memberPrice === null || sku.memberPrice === undefined
+        ? null
+        : Number(sku.memberPrice),
+      cost: sku.costPrice === null || sku.costPrice === undefined ? null : Number(sku.costPrice),
+      stock: Number(sku.stock ?? 0),
+      enabled: sku.status !== 0,
+    }
+  })
+}
+
+async function loadProductDetail() {
+  if (!productId) return
+  try {
+    const item = await productApi.get(Number(productId))
+    Object.assign(form, {
+      name: item.name || '',
+      code: item.code || '',
+      category_id: item.categoryId ? String(item.categoryId) : '',
+      brand_id: item.brandId ? String(item.brandId) : '',
+      craft: item.craft || '',
+      material: item.material || '',
+      origin: item.origin || '景德镇',
+      tags: normalizeImageList(item.tags),
+      retail_price: item.retailPrice === null || item.retailPrice === undefined ? null : Number(item.retailPrice),
+      market_price: item.memberPrice === null || item.memberPrice === undefined ? null : Number(item.memberPrice),
+      stock_warning: form.stock_warning,
+      wholesale_enabled: !!item.wholesaleEnabled,
+      app_scope: [
+        ...(item.retailEnabled ? ['retail' as const] : []),
+        ...(item.wholesaleEnabled ? ['wholesale' as const] : []),
+      ],
+      min_wholesale_qty: item.minWholesaleQty ?? 1,
+      unit: form.unit,
+      weight: item.skus?.[0]?.weight === null || item.skus?.[0]?.weight === undefined ? null : Number(item.skus[0].weight),
+      main_image: item.mainImage || '',
+      gallery: normalizeImageList(item.images),
+      description: item.detail || '',
+      status: item.status === 1 ? 'on' : 'draft',
+    })
+    fillSkuList(item.skus || [])
+  } catch (error) {
+    ElMessage.error('商品详情加载失败')
+  }
+}
+
+async function persistCustomDictOptions() {
+  const tasks: Promise<unknown>[] = []
+  if (form.craft && !craftOptions.value.some((item) => item.value === form.craft)) {
+    tasks.push(
+      dictApi.createItem('craft', { label: form.craft, value: form.craft }).then((item) => {
+        craftOptions.value.push({ value: item.value, label: item.label })
+      }),
+    )
+  }
+  if (form.material && !materialOptions.value.some((item) => item.value === form.material)) {
+    tasks.push(
+      dictApi.createItem('material', { label: form.material, value: form.material }).then((item) => {
+        materialOptions.value.push({ value: item.value, label: item.label })
+      }),
+    )
+  }
+  await Promise.all(tasks)
+}
+
+function buildProductPayload(status: 'on' | 'draft') {
+  const categoryId = Number(form.category_id)
+  const brandId = form.brand_id ? Number(form.brand_id) : undefined
+  return {
+    code: form.code,
+    name: form.name,
+    categoryId: Number.isFinite(categoryId) ? categoryId : undefined,
+    brandId: Number.isFinite(Number(brandId)) ? brandId : undefined,
+    craft: form.craft,
+    material: form.material || undefined,
+    mainImage: form.main_image || undefined,
+    images: form.gallery,
+    detail: form.description || undefined,
+    tags: form.tags,
+    retailEnabled: form.app_scope.includes('retail'),
+    retailPrice: Number(skuList.value.find((s) => s.enabled)?.retail_price || 0),
+    memberPrice: form.market_price === null ? undefined : Number(form.market_price),
+    wholesaleEnabled: form.app_scope.includes('wholesale'),
+    minWholesaleQty: Number(form.min_wholesale_qty || 1),
+    status: status === 'on' ? 1 : 0,
+    skus: skuList.value
+      .filter((sku) => sku.enabled)
+      .map((sku, index) => ({
+        id: sku.id,
+        code: sku.sku_code || `${form.code}-SKU-${index + 1}`,
+        specs: sku.combo,
+        image: sku.sku_image || form.main_image || undefined,
+        retailPrice: Number(sku.retail_price || form.retail_price || 0),
+        memberPrice: sku.wholesale_price === null
+          ? (form.market_price === null ? undefined : Number(form.market_price))
+          : Number(sku.wholesale_price),
+        costPrice: sku.cost === null ? undefined : Number(sku.cost),
+        stock: Number(sku.stock || 0),
+        weight: form.weight === null ? undefined : Number(form.weight),
+        status: 1,
+      })),
+  }
+}
 /* --------------------------------- 提交操作 -------------------------------- */
 const submitting = ref(false)
 
@@ -262,19 +489,32 @@ async function handleSubmit(status: 'on' | 'draft') {
     ElMessage.error('请至少配置一条 SKU')
     return
   }
-  const invalidSku = skuList.value.find((r) => r.price === null || r.stock === null)
+  if (form.app_scope.length === 0) {
+    ElMessage.error('请至少选择一个小程序上架范围')
+    return
+  }
+  const invalidSku = skuList.value.find((r) => r.retail_price === null || r.stock === null)
   if (invalidSku) {
-    ElMessage.error('SKU 的售价和库存必须填写')
+    ElMessage.error('SKU 的零售价和库存必须填写')
     return
   }
   submitting.value = true
   form.status = status
-  console.log('[v0] submit product', { form, skuList: skuList.value })
-  setTimeout(() => {
-    submitting.value = false
+  try {
+    await persistCustomDictOptions()
+    const payload = buildProductPayload(status)
+    if (isEdit.value && productId) {
+      await productApi.update(Number(productId), payload)
+    } else {
+      await productApi.create(payload)
+    }
     ElMessage.success(status === 'on' ? '已保存并上架' : '已保存为草稿')
     router.push('/product/list')
-  }, 600)
+  } catch (error) {
+    ElMessage.error(isEdit.value ? '商品更新失败' : '商品创建失败')
+  } finally {
+    submitting.value = false
+  }
 }
 
 function handleCancel() {
@@ -288,31 +528,12 @@ function handleCancel() {
 }
 
 /* --------------------------------- 编辑回填 -------------------------------- */
-onMounted(() => {
-  regenerateSkuMatrix()
+onMounted(async () => {
+  await loadOptions()
   if (isEdit.value) {
-    // 模拟根据 id 拉取数据
-    Object.assign(form, {
-      name: '青花缠枝莲茶具套装',
-      code: 'YM-TEA-001',
-      category_id: 'cat-1',
-      brand_id: 'brand-1',
-      craft: '青花',
-      material: '高岭土',
-      origin: '景德镇',
-      tags: ['新品', '礼盒'],
-      retail_price: 1280,
-      market_price: 1580,
-      stock_warning: 10,
-      wholesale_enabled: true,
-      min_wholesale_qty: 6,
-      unit: '套',
-      weight: 2.4,
-      main_image: defaultMainImg,
-      gallery: [defaultGalleryImgs[0], defaultGalleryImgs[0]],
-      description: '景德镇手工绘制，传统青花工艺，含一壶四杯一茶海。',
-      status: 'on',
-    })
+    await loadProductDetail()
+  } else {
+    regenerateSkuMatrix()
   }
 })
 </script>
@@ -388,16 +609,40 @@ onMounted(() => {
               </el-select>
             </el-form-item>
           </el-col>
+          <el-col :span="24">
+            <el-form-item label="上架范围">
+              <el-checkbox-group v-model="form.app_scope">
+                <el-checkbox label="retail">小程序A（零售）</el-checkbox>
+                <el-checkbox label="wholesale">小程序B（批发）</el-checkbox>
+              </el-checkbox-group>
+              <div class="form-tip">选择商品在哪个小程序中展示；可同时上架到两个小程序。</div>
+            </el-form-item>
+          </el-col>
           <el-col :span="8">
             <el-form-item label="工艺" prop="craft">
-              <el-select v-model="form.craft" placeholder="请选择工艺" style="width: 100%">
+              <el-select
+                v-model="form.craft"
+                placeholder="请选择或输入工艺"
+                filterable
+                allow-create
+                default-first-option
+                style="width: 100%"
+              >
                 <el-option v-for="o in craftOptions" :key="o.value" :value="o.value" :label="o.label" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="胎质">
-              <el-select v-model="form.material" placeholder="请选择胎质" clearable style="width: 100%">
+              <el-select
+                v-model="form.material"
+                placeholder="请选择或输入胎质"
+                filterable
+                allow-create
+                default-first-option
+                clearable
+                style="width: 100%"
+              >
                 <el-option
                   v-for="o in materialOptions"
                   :key="o.value"
@@ -425,6 +670,53 @@ onMounted(() => {
               >
                 <el-option v-for="t in tagOptions" :key="t" :value="t" :label="t" />
               </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="市场价">
+              <el-input-number
+                v-model="form.market_price"
+                :min="0"
+                :precision="2"
+                :controls="false"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="库存预警">
+              <el-input-number
+                v-model="form.stock_warning"
+                :min="0"
+                :controls="false"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="起批数量">
+              <el-input-number
+                v-model="form.min_wholesale_qty"
+                :min="1"
+                :controls="false"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="计量单位" prop="unit">
+              <el-input v-model="form.unit" placeholder="件 / 套 / 对" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="重量 (kg)">
+              <el-input-number
+                v-model="form.weight"
+                :min="0"
+                :precision="2"
+                :controls="false"
+                style="width: 100%"
+              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -497,14 +789,23 @@ onMounted(() => {
         <div class="batch-bar">
           <span class="batch-label">批量填充：</span>
           <el-input-number
-            v-model="batchPrice"
+            v-model="batchRetailPrice"
             :min="0"
             :precision="2"
-            placeholder="售价"
+            placeholder="零售价"
             controls-position="right"
             style="width: 160px"
           />
-          <el-button @click="applyBatchPrice">应用售价</el-button>
+          <el-button @click="applyBatchRetailPrice">应用零售价</el-button>
+          <el-input-number
+            v-model="batchWholesalePrice"
+            :min="0"
+            :precision="2"
+            placeholder="批发价"
+            controls-position="right"
+            style="width: 160px"
+          />
+          <el-button @click="applyBatchWholesalePrice">应用批发价</el-button>
           <el-input-number
             v-model="batchStock"
             :min="0"
@@ -527,15 +828,51 @@ onMounted(() => {
               <span class="sku-combo">{{ row.combo[header] }}</span>
             </template>
           </el-table-column>
+          <el-table-column label="SKU 图片" width="120" align="center">
+            <template #default="{ row }">
+              <el-upload
+                :show-file-list="false"
+                :http-request="getSkuUploadHandler(row)"
+                accept="image/*"
+              >
+                <el-image
+                  v-if="row.sku_image"
+                  :src="row.sku_image"
+                  fit="cover"
+                  style="width: 44px; height: 44px; border-radius: 4px"
+                />
+                <el-button v-else size="small" text type="primary">上传</el-button>
+              </el-upload>
+              <el-button
+                v-if="row.sku_image"
+                size="small"
+                text
+                type="danger"
+                @click="clearSkuImage(row)"
+              >删除</el-button>
+            </template>
+          </el-table-column>
           <el-table-column label="SKU 编码" min-width="160">
             <template #default="{ row }">
               <el-input v-model="row.sku_code" placeholder="自动生成" size="small" />
             </template>
           </el-table-column>
-          <el-table-column label="售价 (元)" width="150">
+          <el-table-column label="零售价 (元)" width="150">
             <template #default="{ row }">
               <el-input-number
-                v-model="row.price"
+                v-model="row.retail_price"
+                :min="0"
+                :precision="2"
+                :controls="false"
+                size="small"
+                style="width: 100%"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="批发价 (元)" width="150">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.wholesale_price"
                 :min="0"
                 :precision="2"
                 :controls="false"
@@ -575,83 +912,6 @@ onMounted(() => {
         </el-table>
       </el-card>
 
-      <!-- 价格与销售 -->
-      <el-card class="section" shadow="never">
-        <template #header>
-          <div class="section-header">
-            <span class="bar" /> <span class="title">价格与销售</span>
-          </div>
-        </template>
-        <el-row :gutter="24">
-          <el-col :span="8">
-            <el-form-item label="零售参考价" prop="retail_price">
-              <el-input-number
-                v-model="form.retail_price"
-                :min="0"
-                :precision="2"
-                :controls="false"
-                style="width: 100%"
-              >
-                <template #suffix>元</template>
-              </el-input-number>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="市场价">
-              <el-input-number
-                v-model="form.market_price"
-                :min="0"
-                :precision="2"
-                :controls="false"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="库存预警">
-              <el-input-number
-                v-model="form.stock_warning"
-                :min="0"
-                :controls="false"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="开启批发">
-              <el-switch v-model="form.wholesale_enabled" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="起批数量">
-              <el-input-number
-                v-model="form.min_wholesale_qty"
-                :min="1"
-                :controls="false"
-                :disabled="!form.wholesale_enabled"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="计量单位" prop="unit">
-              <el-input v-model="form.unit" placeholder="件 / 套 / 对" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="重量 (kg)">
-              <el-input-number
-                v-model="form.weight"
-                :min="0"
-                :precision="2"
-                :controls="false"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-        </el-row>
-      </el-card>
-
       <!-- 图片与详情 -->
       <el-card class="section" shadow="never">
         <template #header>
@@ -667,10 +927,19 @@ onMounted(() => {
                 <el-button type="danger" :icon="Delete" circle size="small" @click="form.main_image = ''" />
               </div>
             </div>
-            <div v-else class="image-uploader main" @click="handleMainUpload">
-              <el-icon><Plus /></el-icon>
-              <span>上传主图</span>
-            </div>
+            <el-upload
+              v-else
+              class="image-upload-wrapper"
+              :show-file-list="false"
+              :http-request="handleMainUpload"
+              :disabled="mainImageUploading"
+              accept="image/*"
+            >
+              <div class="image-uploader main">
+                <el-icon><Plus /></el-icon>
+                <span>{{ mainImageUploading ? '上传中...' : '上传主图' }}</span>
+              </div>
+            </el-upload>
             <span class="image-tip">建议尺寸 800×800，JPG/PNG，不超过 2MB</span>
           </div>
         </el-form-item>
@@ -688,10 +957,19 @@ onMounted(() => {
                 />
               </div>
             </div>
-            <div v-if="form.gallery.length < 8" class="image-uploader" @click="addGalleryImage">
-              <el-icon><Plus /></el-icon>
-              <span>添加</span>
-            </div>
+            <el-upload
+              v-if="form.gallery.length < 8"
+              class="image-upload-wrapper"
+              :show-file-list="false"
+              :http-request="handleGalleryUpload"
+              :disabled="galleryUploading"
+              accept="image/*"
+            >
+              <div class="image-uploader">
+                <el-icon><Plus /></el-icon>
+                <span>{{ galleryUploading ? '上传中...' : '添加' }}</span>
+              </div>
+            </el-upload>
           </div>
         </el-form-item>
         <el-form-item label="详情描述">
@@ -876,6 +1154,14 @@ onMounted(() => {
 .image-item:hover .image-mask {
   opacity: 1;
 }
+.image-upload-wrapper {
+  display: inline-flex;
+}
+
+.image-upload-wrapper :deep(.el-upload) {
+  display: block;
+}
+
 .image-uploader {
   width: 88px;
   height: 88px;

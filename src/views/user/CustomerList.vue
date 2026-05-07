@@ -6,8 +6,8 @@
         <p class="page-subtitle">C 端会员管理，含消费画像、等级与标签</p>
       </div>
       <div class="header-actions">
-        <el-button :icon="Upload">导入会员</el-button>
-        <el-button :icon="Download">导出</el-button>
+        <el-button :icon="Upload" @click="handleImport">导入会员</el-button>
+        <el-button :icon="Download" @click="exportCustomers">导出</el-button>
       </div>
     </div>
 
@@ -81,14 +81,14 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :icon="Search">查询</el-button>
+          <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
           <el-button :icon="RefreshLeft" @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card class="content-card" shadow="never">
-      <el-table :data="customers" stripe border>
+      <el-table :data="pagedCustomers" stripe border>
         <el-table-column label="会员信息" min-width="260">
           <template #default="{ row }">
             <div class="customer-cell">
@@ -112,6 +112,13 @@
               <el-icon><Medal /></el-icon>
               <span>{{ levelLabel(row.level) }}</span>
             </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="来源" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="getSourceMeta(row.source).type" effect="light">
+              {{ row.sourceLabel }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="标签" width="220">
@@ -157,7 +164,7 @@
         <el-pagination
           v-model:current-page="pagination.page"
           v-model:page-size="pagination.size"
-          :total="pagination.total"
+          :total="filteredCustomers.length"
           :page-sizes="[10, 20, 50]"
           layout="total, sizes, prev, pager, next, jumper"
           background
@@ -234,6 +241,8 @@ interface Customer {
   phone: string
   gender: 'male' | 'female'
   level: 'V0' | 'V1' | 'V2' | 'V3' | 'V4'
+  source: string
+  sourceLabel: string
   tags: string[]
   totalAmount: number
   orderCount: number
@@ -250,6 +259,21 @@ const levels = [
   { value: 'V3', label: '白金会员' },
   { value: 'V4', label: '黑钻会员' },
 ]
+
+const sourceMeta: Record<string, { label: string; type: 'primary' | 'warning' | 'success' | 'info' }> = {
+  miniprogram_a: { label: '小程序A', type: 'primary' },
+  miniprogram_b: { label: '小程序B', type: 'warning' },
+  miniprogram: { label: '小程序A', type: 'primary' },
+  h5: { label: '批发H5', type: 'success' },
+  b2b: { label: '小程序B', type: 'warning' },
+}
+
+function getSourceMeta(source: string, role?: string) {
+  if (sourceMeta[source]) return sourceMeta[source]
+  return role === 'dealer'
+    ? { label: '小程序B', type: 'warning' as const }
+    : { label: '小程序A', type: 'primary' as const }
+}
 
 const filter = reactive({
   keyword: '',
@@ -272,7 +296,11 @@ async function loadCustomers() {
   try {
     const res: any = await customerApi.list({ page: 1, pageSize: 100 })
     const rows = (res?.list ?? []) as any[]
-    customers.value = rows.map((r: any, i: number) => ({
+    customers.value = rows.map((r: any, i: number) => {
+      const latestOrder = r.orders?.[0]
+      const source = latestOrder?.source || (r.role === 'dealer' ? 'miniprogram_b' : 'miniprogram_a')
+      const sourceInfo = getSourceMeta(source, r.role)
+      return ({
       id: r.id ?? i + 1,
       memberId: r.memberId || r.member_id || String(r.id ?? ''),
       avatar: r.avatar || '/placeholder.svg?height=44&width=44',
@@ -280,6 +308,8 @@ async function loadCustomers() {
       phone: r.phone || '',
       gender: (r.gender as 'male' | 'female' | 'unknown') || 'unknown',
       level: r.level?.name || r.levelName || r.level || 'V0',
+      source,
+      sourceLabel: sourceInfo.label,
       tags: Array.isArray(r.tags) ? r.tags : (r.tagList ?? []),
       totalAmount: Number(r.totalAmount ?? 0),
       orderCount: Number(r.orderCount ?? 0),
@@ -287,7 +317,8 @@ async function loadCustomers() {
       region: r.region || [r.province, r.city].filter(Boolean).join(' ') || '',
       createdAt: r.createdAt || '',
       lastActive: r.lastActive || r.lastLoginAt || '',
-    })) as any
+      })
+    }) as any
   } catch (e: any) {
     loadError.value = e?.message || '后端服务不可用'
     customers.value = []
@@ -295,6 +326,27 @@ async function loadCustomers() {
 }
 
 onMounted(loadCustomers)
+
+const filteredCustomers = computed(() => {
+  const kw = filter.keyword.trim().toLowerCase()
+  return customers.value.filter((row) => {
+    if (kw) {
+      const hit = row.nickname.toLowerCase().includes(kw)
+        || row.phone.toLowerCase().includes(kw)
+        || row.memberId.toLowerCase().includes(kw)
+      if (!hit) return false
+    }
+    if (filter.level && row.level !== filter.level) return false
+    if (filter.gender && row.gender !== filter.gender) return false
+    if (filter.tag && !row.tags.some((t) => t.includes(filter.tag) || filter.tag.includes(t))) return false
+    return true
+  })
+})
+
+const pagedCustomers = computed(() => {
+  const start = (pagination.page - 1) * pagination.size
+  return filteredCustomers.value.slice(start, start + pagination.size)
+})
 
 const stats = computed(() => {
   const total = 8652
@@ -318,11 +370,61 @@ function tagType(tag: string): 'primary' | 'success' | 'warning' | 'danger' | 'i
   return 'info'
 }
 
+function handleSearch() {
+  pagination.page = 1
+}
+
 function handleReset() {
   filter.keyword = ''
   filter.level = ''
   filter.gender = ''
   filter.tag = ''
+  pagination.page = 1
+}
+
+function escapeCsvCell(value: unknown) {
+  const text = String(value ?? '')
+  if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`
+  return text
+}
+
+function downloadCsv(filename: string, header: string[], rows: Array<Array<unknown>>) {
+  const csv = [header, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\r\n')
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportCustomers() {
+  const rows = filteredCustomers.value.map((row) => [
+    row.memberId,
+    row.nickname,
+    row.phone,
+    row.gender === 'male' ? '男' : '女',
+    row.level,
+    row.sourceLabel,
+    row.tags.join('、'),
+    row.totalAmount,
+    row.orderCount,
+    row.points,
+    row.region,
+    row.createdAt,
+    row.lastActive,
+  ])
+  downloadCsv(
+    `零售客户-${new Date().toISOString().slice(0, 10)}.csv`,
+    ['会员ID', '昵称', '手机号', '性别', '等级', '来源', '标签', '累计消费', '订单数', '积分', '所在地', '注册时间', '最近活跃'],
+    rows,
+  )
+  ElMessage.success(`已导出 ${rows.length} 位会员`)
+}
+
+function handleImport() {
+  ElMessage.info('导入功能下一步实现')
 }
 
 const detailVisible = ref(false)

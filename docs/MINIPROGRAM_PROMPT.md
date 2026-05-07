@@ -13,7 +13,7 @@
 > 以下内容整段复制，粘贴后把 `api.yourdomain.com` 改成您自己的后端域名。
 
 ```
-你是一名资深全栈工程师。请用微信原生小程序（JavaScript + WXML + WXSS）帮我搭建一个「央茗陶瓷」零售端小程序。后端已就绪，所有数据通过 RESTful API 从以下地址获取：
+你是一名资深全栈工程师。请用微信原生小程序（JavaScript + WXML + WXSS）帮我搭建一个「央皿陶瓷」零售端小程序。后端已就绪，所有数据通过 RESTful API 从以下地址获取：
 
   API BaseURL: https://api.yourdomain.com/api
   鉴权方式:    Bearer JWT

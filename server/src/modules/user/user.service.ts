@@ -45,7 +45,14 @@ export class UserService {
     const [list, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
-        include: { level: true },
+        include: {
+          level: true,
+          orders: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { source: true, channel: true },
+          },
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,

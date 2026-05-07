@@ -41,10 +41,14 @@ let ClientCatalogController = class ClientCatalogController {
     // ---------- 商品 ----------
     /**
      * 商品列表
-     * 可用参数：categoryId、brandId、keyword、sort（sales|new|price_asc|price_desc）、page、pageSize
-     * 仅返回「已上架 + 允许零售」的商品
+     * 可用参数：categoryId、brandId、keyword、channel（retail|wholesale）、sort（sales|new|price_asc|price_desc）、page、pageSize
+     * 默认返回零售商品；批发端传 channel=wholesale。
      */
     products(q) {
+        return this.productList(q);
+    }
+    /** 兼容小程序端旧/新路径：/client/product/list */
+    productList(q) {
         const sortMap = {
             sales: { field: 'salesCount', order: 'desc' },
             new: { field: 'createdAt', order: 'desc' },
@@ -52,12 +56,13 @@ let ClientCatalogController = class ClientCatalogController {
             price_desc: { field: 'retailPrice', order: 'desc' },
         };
         const sort = sortMap[q.sort] || sortMap.new;
+        const channel = q.channel === 'wholesale' ? 'wholesale' : 'retail';
         return this.productSvc.search({
             categoryId: q.categoryId ? Number(q.categoryId) : undefined,
             brandId: q.brandId ? Number(q.brandId) : undefined,
             keyword: q.keyword,
-            status: 1, // 上架
-            channel: 'retail',
+            status: 1,
+            channel,
             page: Number(q.page) || 1,
             pageSize: Number(q.pageSize) || 10,
             sortField: sort.field,
@@ -80,6 +85,10 @@ let ClientCatalogController = class ClientCatalogController {
     }
     /** 商品详情（含 SKU 列表） */
     productDetail(id) {
+        return this.productSvc.findById(id);
+    }
+    /** 兼容小程序端路径：/client/product/:id */
+    productDetailAlias(id) {
         return this.productSvc.findById(id);
     }
 };
@@ -115,6 +124,14 @@ __decorate([
 ], ClientCatalogController.prototype, "products", null);
 __decorate([
     (0, public_decorator_1.Public)(),
+    (0, common_1.Get)('product/list'),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], ClientCatalogController.prototype, "productList", null);
+__decorate([
+    (0, public_decorator_1.Public)(),
     (0, common_1.Get)('products/recommend'),
     __param(0, (0, common_1.Query)('limit')),
     __metadata("design:type", Function),
@@ -129,6 +146,14 @@ __decorate([
     __metadata("design:paramtypes", [Number]),
     __metadata("design:returntype", void 0)
 ], ClientCatalogController.prototype, "productDetail", null);
+__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, common_1.Get)('product/:id'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], ClientCatalogController.prototype, "productDetailAlias", null);
 exports.ClientCatalogController = ClientCatalogController = __decorate([
     (0, common_1.Controller)('client'),
     __metadata("design:paramtypes", [product_service_1.ProductService,

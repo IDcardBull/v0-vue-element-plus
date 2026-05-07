@@ -12,6 +12,7 @@ const order_controller_1 = require("./order.controller");
 const order_service_1 = require("./order.service");
 const inventory_module_1 = require("../inventory/inventory.module");
 const price_tier_module_1 = require("../price-tier/price-tier.module");
+const wechat_pay_service_1 = require("../client/wechat-pay.service");
 let OrderModule = class OrderModule {
 };
 exports.OrderModule = OrderModule;
@@ -19,7 +20,7 @@ exports.OrderModule = OrderModule = __decorate([
     (0, common_1.Module)({
         imports: [inventory_module_1.InventoryModule, price_tier_module_1.PriceTierModule],
         controllers: [order_controller_1.OrderController],
-        providers: [order_service_1.OrderService],
+        providers: [order_service_1.OrderService, wechat_pay_service_1.WechatPayService],
         exports: [order_service_1.OrderService],
     })
 ], OrderModule);

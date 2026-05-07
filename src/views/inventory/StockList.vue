@@ -6,7 +6,7 @@
         <p class="page-subtitle">按 SKU 维度查看各仓库的可用与占用库存</p>
       </div>
       <div class="header-actions">
-        <el-button :icon="Download">导出库存报表</el-button>
+        <el-button :icon="Download" @click="exportStockReport">导出库存报表</el-button>
         <el-button type="primary" :icon="Refresh" @click="handleRefresh">刷新</el-button>
       </div>
     </div>
@@ -56,22 +56,6 @@
         <el-form-item label="SKU / 商品">
           <el-input v-model="filter.keyword" placeholder="SKU 编码 / 商品名称" clearable style="width: 220px" />
         </el-form-item>
-        <el-form-item label="仓库">
-          <el-select v-model="filter.warehouse" placeholder="全部仓库" clearable style="width: 160px">
-            <el-option label="主仓（景德镇）" value="main" />
-            <el-option label="华东仓（上海）" value="east" />
-            <el-option label="华南仓（广州）" value="south" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="分类">
-          <el-cascader
-            v-model="filter.category"
-            :options="categoryOptions"
-            placeholder="全部分类"
-            clearable
-            style="width: 200px"
-          />
-        </el-form-item>
         <el-form-item label="库存状态">
           <el-select v-model="filter.stockStatus" placeholder="全部" clearable style="width: 140px">
             <el-option label="正常" value="normal" />
@@ -80,14 +64,14 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :icon="Search">查询</el-button>
+          <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
           <el-button :icon="RefreshLeft" @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card class="content-card" shadow="never">
-      <el-table :data="stockList" stripe border>
+      <el-table :data="filteredStockList" stripe border v-loading="loading">
         <el-table-column label="商品图" width="80" align="center">
           <template #default="{ row }">
             <el-image :src="row.image" fit="cover" style="width: 48px; height: 48px; border-radius: 4px" />
@@ -103,7 +87,6 @@
           </template>
         </el-table-column>
         <el-table-column label="分类" prop="category" width="120" />
-        <el-table-column label="仓库" prop="warehouseName" width="140" />
         <el-table-column label="可用库存" width="110" align="right">
           <template #default="{ row }">
             <span :class="{ danger: row.available <= row.warningLine }">
@@ -153,10 +136,12 @@
         <el-pagination
           v-model:current-page="pagination.page"
           v-model:page-size="pagination.size"
-          :total="pagination.total"
+          :total="displayTotal"
           :page-sizes="[10, 20, 50]"
           layout="total, sizes, prev, pager, next, jumper"
           background
+          @current-change="loadList"
+          @size-change="handleSizeChange"
         />
       </div>
     </el-card>
@@ -183,9 +168,6 @@
         <el-form-item label="业务单号">
           <el-input v-model="adjustForm.orderNo" placeholder="采购单 / 销售单 / 调拨单号" />
         </el-form-item>
-        <el-form-item label="经办人">
-          <el-input v-model="adjustForm.operator" placeholder="操作人姓名" />
-        </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="adjustForm.remark" type="textarea" :rows="3" />
         </el-form-item>
@@ -202,6 +184,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Box, Goods, Coin, Warning, Search, Refresh, RefreshLeft, Download,
@@ -209,9 +192,12 @@ import {
 import { inventoryApi } from '@/api/inventory'
 
 const loading = ref(false)
+const router = useRouter()
 
 interface StockRow {
   id: number
+  skuId: number
+  warehouseId: number
   sku: string
   productName: string
   spec: string
@@ -228,36 +214,13 @@ interface StockRow {
 
 const filter = reactive({
   keyword: '',
-  warehouse: '',
-  category: [] as string[],
   stockStatus: '',
 })
-
-const categoryOptions = [
-  {
-    value: 'teaware',
-    label: '茶具',
-    children: [
-      { value: 'teapot', label: '紫砂壶' },
-      { value: 'teacup', label: '品茗杯' },
-      { value: 'teaset', label: '茶具套装' },
-    ],
-  },
-  {
-    value: 'vase',
-    label: '花瓶',
-    children: [
-      { value: 'blue', label: '青花瓷' },
-      { value: 'celadon', label: '青瓷' },
-    ],
-  },
-  { value: 'dining', label: '餐具' },
-]
 
 const pagination = reactive({
   page: 1,
   size: 10,
-  total: 8,
+  total: 0,
 })
 
 const stockList = ref<StockRow[]>([])
@@ -267,32 +230,43 @@ async function loadList() {
   loading.value = true
   loadError.value = ''
   try {
-    const res: any = await inventoryApi.stockList({ page: 1, pageSize: 100 })
+    const params: any = {
+      page: pagination.page,
+      pageSize: pagination.size,
+      keyword: filter.keyword || undefined,
+    }
+    const res: any = await inventoryApi.stockList(params)
     const rows = (res?.list ?? []) as any[]
     stockList.value = rows.map((r: any, i: number) => ({
       id: r.id ?? i + 1,
+      skuId: Number(r.skuId ?? r.sku?.id ?? 0),
+      warehouseId: Number(r.warehouseId ?? r.warehouse?.id ?? 0),
       sku: r.sku?.code || r.skuCode || '',
       productName: r.sku?.product?.name || r.productName || '',
       spec: r.sku?.specs || r.spec || r.specs || '',
-      image: r.sku?.product?.mainImage || '/placeholder.svg',
+      image: r.sku?.image || r.sku?.product?.mainImage || '/placeholder.svg',
       category: r.sku?.product?.category?.name || r.category || '',
       warehouseName: r.warehouse?.name || r.warehouseName || '主仓',
-      available: Number(r.available ?? r.availableQty ?? 0),
-      locked: Number(r.locked ?? r.lockedQty ?? 0),
+      available: Number(r.available ?? ((r.onHand ?? 0) - (r.reserved ?? 0))),
+      locked: Number(r.locked ?? r.reserved ?? 0),
       inTransit: Number(r.inTransit ?? 0),
-      warningLine: Number(r.warningLine ?? r.safetyStock ?? 20),
-      maxStock: Number(r.maxStock ?? 200),
+      warningLine: Number(r.warningLine ?? r.warnMin ?? r.safetyStock ?? 20),
+      maxStock: Number(r.maxStock ?? r.warnMax ?? 200),
       unitPrice: Number(r.unitPrice ?? r.sku?.retailPrice ?? 0),
     })) as any
+    pagination.total = Number(res?.total ?? stockList.value.length)
   } catch (e: any) {
     loadError.value = e?.message || '后端服务不可用'
     stockList.value = []
+    pagination.total = 0
   } finally {
     loading.value = false
   }
 }
 
-onMounted(loadList)
+onMounted(async () => {
+  await Promise.all([loadList(), loadRecordsPreview()])
+})
 
 const stats = computed(() => {
   const skuTotal = stockList.value.length
@@ -304,6 +278,17 @@ const stats = computed(() => {
   const warningCount = stockList.value.filter((r) => r.available <= r.warningLine).length
   return { skuTotal, totalQty, totalValue, warningCount }
 })
+
+const filteredStockList = computed(() => {
+  return stockList.value.filter((row) => {
+    if (filter.stockStatus === 'warning' && !(row.available <= row.warningLine && row.available > 0)) return false
+    if (filter.stockStatus === 'shortage' && row.available !== 0) return false
+    if (filter.stockStatus === 'normal' && row.available <= row.warningLine) return false
+    return true
+  })
+})
+
+const displayTotal = computed(() => (filter.stockStatus ? filteredStockList.value.length : pagination.total))
 
 function getStatusTag(row: StockRow) {
   if (row.available === 0) return { type: 'danger' as const, text: '缺货' }
@@ -320,24 +305,26 @@ function getWaterStatus(row: StockRow) {
 const adjustVisible = ref(false)
 const adjustMode = ref<'in' | 'out'>('in')
 const adjustForm = reactive({
+  skuId: 0,
+  warehouseId: 0,
   sku: '',
   productName: '',
   available: 0,
   qty: 1,
   orderNo: '',
-  operator: '',
   remark: '',
 })
 
 function handleInbound(row: StockRow) {
   adjustMode.value = 'in'
   Object.assign(adjustForm, {
+    skuId: row.skuId,
+    warehouseId: row.warehouseId,
     sku: row.sku,
     productName: row.productName,
     available: row.available,
     qty: 1,
     orderNo: '',
-    operator: '',
     remark: '',
   })
   adjustVisible.value = true
@@ -346,24 +333,63 @@ function handleInbound(row: StockRow) {
 function handleOutbound(row: StockRow) {
   adjustMode.value = 'out'
   Object.assign(adjustForm, {
+    skuId: row.skuId,
+    warehouseId: row.warehouseId,
     sku: row.sku,
     productName: row.productName,
     available: row.available,
     qty: 1,
     orderNo: '',
-    operator: '',
     remark: '',
   })
   adjustVisible.value = true
 }
 
-function handleHistory(row: StockRow) {
-  ElMessage.info(`查看 ${row.sku} 的出入库明细（占位）`)
+function handleHistory(_row?: StockRow) {
+  router.push('/inventory/record')
 }
 
-function handleAdjustSubmit() {
-  ElMessage.success(`${adjustMode.value === 'in' ? '入库' : '出库'}登记成功：${adjustForm.qty} 件`)
-  adjustVisible.value = false
+async function handleAdjustSubmit() {
+  if (!adjustForm.skuId || !adjustForm.warehouseId) {
+    ElMessage.error('缺少库存定位信息，请刷新后重试')
+    return
+  }
+  if (!adjustForm.qty || adjustForm.qty <= 0) {
+    ElMessage.warning('请输入有效数量')
+    return
+  }
+
+  const payload = {
+    type: adjustMode.value,
+    skuId: adjustForm.skuId,
+    warehouseId: adjustForm.warehouseId,
+    qty: Number(adjustForm.qty),
+    orderNo: adjustForm.orderNo || undefined,
+    remark: adjustForm.remark || undefined,
+  }
+
+  try {
+    if (adjustMode.value === 'in') {
+      await inventoryApi.stockIn(payload)
+    } else {
+      await inventoryApi.stockOut(payload)
+    }
+    ElMessage.success(`${adjustMode.value === 'in' ? '入库' : '出库'}成功：${adjustForm.qty} 件`)
+    adjustVisible.value = false
+    await Promise.all([loadList(), loadRecordsPreview()])
+  } catch (e: any) {
+    ElMessage.error(e?.message || `${adjustMode.value === 'in' ? '入库' : '出库'}失败`)
+  }
+}
+
+const recentRecords = ref<any[]>([])
+async function loadRecordsPreview() {
+  try {
+    const res: any = await inventoryApi.records({ page: 1, pageSize: 5 })
+    recentRecords.value = Array.isArray(res?.list) ? res.list : []
+  } catch {
+    recentRecords.value = []
+  }
 }
 
 async function handleRefresh() {
@@ -371,11 +397,60 @@ async function handleRefresh() {
   if (!loadError.value) ElMessage.success('库存数据已刷新')
 }
 
+function handleSearch() {
+  pagination.page = 1
+  loadList()
+}
+
+function handleSizeChange() {
+  pagination.page = 1
+  loadList()
+}
+
 function handleReset() {
   filter.keyword = ''
-  filter.warehouse = ''
-  filter.category = []
   filter.stockStatus = ''
+  pagination.page = 1
+  loadList()
+}
+
+function escapeCsvCell(value: unknown) {
+  const text = String(value ?? '')
+  if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`
+  return text
+}
+
+function downloadCsv(filename: string, header: string[], rows: Array<Array<unknown>>) {
+  const csv = [header, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\r\n')
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportStockReport() {
+  const rows = filteredStockList.value.map((row) => [
+    row.sku,
+    row.productName,
+    row.spec,
+    row.category,
+    row.warehouseName,
+    row.available,
+    row.locked,
+    row.inTransit,
+    row.warningLine,
+    row.maxStock,
+    row.unitPrice,
+  ])
+  downloadCsv(
+    `库存报表-${new Date().toISOString().slice(0, 10)}.csv`,
+    ['SKU', '商品名', '规格', '分类', '仓库', '可用库存', '占用库存', '在途库存', '预警值', '最大库存', '单价'],
+    rows,
+  )
+  ElMessage.success(`已导出 ${rows.length} 条库存`)
 }
 </script>
 

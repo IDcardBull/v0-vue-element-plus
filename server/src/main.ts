@@ -1,14 +1,18 @@
 import { NestFactory } from '@nestjs/core'
 import { ValidationPipe, Logger } from '@nestjs/common'
+import { NestExpressApplication } from '@nestjs/platform-express'
+import { join } from 'node:path'
 import { AppModule } from './app.module'
 import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { HttpExceptionFilter } from './common/filters/http-exception.filter'
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log'],
     rawBody: true, // 微信支付回调解密需要读取原始 body
   })
+
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' })
 
   // 全局前缀
   app.setGlobalPrefix('api')
