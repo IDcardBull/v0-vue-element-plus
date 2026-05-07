@@ -2,7 +2,6 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import PriceTierConfig from './PriceTierConfig.vue'
 import { productApi } from '@/api/product'
 import { categoryApi } from '@/api/category'
 import { fetchTiersBySku, saveTiers } from '@/api/priceTier'
@@ -24,11 +23,6 @@ export type ProductCraft =
 export type DealerLevel = '普通' | '白银' | '黄金' | '钻石'
 type ChannelFilter = '' | 'retail' | 'wholesale'
 
-interface PriceTier {
-  min_qty: number | null
-  max_qty: number | null
-  price: number | null
-}
 
 export interface ProductManageItem {
   id: string
@@ -42,15 +36,11 @@ export interface ProductManageItem {
   retail_enabled: boolean
   wholesale_enabled: boolean
   min_wholesale_qty: number
-  tier_count: number
-  tier_min_price: number
-  tier_max_price: number
   authorized_levels: DealerLevel[]
   dealer_count: number
   wholesale_sales_30d: number
   stock_available: number
   stock_warning: number
-  tiers: PriceTier[]
 }
 
 interface SkuInfo {
@@ -97,11 +87,6 @@ async function loadList() {
     const rows = (res?.list ?? []) as any[]
     products.value = rows.map((r: any) => {
       const sku = r.skus?.[0] || {}
-      const tiers = (sku.priceTiers || r.priceTiers || []).map((t: any) => ({
-        min_qty: t.minQty ?? t.min_qty ?? null,
-        max_qty: t.maxQty ?? t.max_qty ?? null,
-        price: Number(t.price ?? 0),
-      }))
       return {
         id: String(r.id),
         sku_id: sku.id,
@@ -114,15 +99,11 @@ async function loadList() {
         retail_enabled: r.retailEnabled === true,
         wholesale_enabled: r.wholesaleEnabled === true,
         min_wholesale_qty: Number(sku.minOrderQty ?? r.minWholesaleQty ?? 1),
-        tier_count: tiers.length || Number(r.priceTierCount ?? 0),
-        tier_min_price: Number(r.tierMinPrice ?? tiers[tiers.length - 1]?.price ?? 0),
-        tier_max_price: Number(r.tierMaxPrice ?? tiers[0]?.price ?? 0),
         authorized_levels: (r.authorizedLevels || r.authLevels || []) as DealerLevel[],
         dealer_count: Number(r.dealerCount ?? r.distributorCount ?? 0),
         wholesale_sales_30d: Number(r.wholesaleSales30d ?? r.monthlyAmount ?? 0),
         stock_available: Number(sku.stock ?? sku.stockAvailable ?? 0),
         stock_warning: Number(sku.stockWarning ?? 20),
-        tiers,
       }
     })
   } catch (e: any) {
@@ -245,74 +226,6 @@ async function handleStopWholesale(row: ProductManageItem) {
   } catch {
     /* 取消 */
   }
-}
-
-/* ===================== 阶梯价抽屉 ===================== */
-
-const tierDrawerVisible = ref(false)
-const currentSku = ref<SkuInfo | null>(null)
-const currentTiers = ref<PriceTier[]>([])
-const currentRowId = ref<string>('')
-
-async function openPriceTier(row: ProductManageItem) {
-  if (!row.wholesale_enabled) {
-    ElMessage.warning('该商品未开启批发，无法配置阶梯价')
-    return
-  }
-  if (!row.sku_id) {
-    ElMessage.warning('该商品暂无可配置阶梯价的 SKU')
-    return
-  }
-  currentSku.value = {
-    sku_id: row.sku_id,
-    sku_name: row.name,
-    image: row.image,
-    retail_price: row.retail_price_ref,
-  }
-  try {
-    const dbTiers = await fetchTiersBySku(row.sku_id)
-    currentTiers.value = (dbTiers || []).map((tier: any) => ({
-      min_qty: Number(tier.minQty ?? tier.min_qty ?? 1),
-      max_qty: tier.maxQty ?? tier.max_qty ?? null,
-      price: Number(tier.price ?? 0),
-    }))
-  } catch (error: any) {
-    ElMessage.error(error?.message || '阶梯价加载失败')
-    return
-  }
-  currentRowId.value = row.id
-  tierDrawerVisible.value = true
-}
-
-async function handleTierSave(payload: { sku_id: number; tiers: PriceTier[] }) {
-  try {
-    await saveTiers(payload.sku_id, payload.tiers.map((tier) => ({
-      minQty: Number(tier.min_qty || 0),
-      maxQty: tier.max_qty === null ? null : Number(tier.max_qty),
-      price: Number(tier.price || 0),
-    })))
-  } catch (error: any) {
-    ElMessage.error(error?.message || '阶梯价保存失败')
-    return
-  }
-  const row = products.value.find((p) => p.id === currentRowId.value)
-  if (row) {
-    row.tiers = payload.tiers
-    row.tier_count = payload.tiers.length
-    const prices = payload.tiers
-      .map((t) => Number(t.price ?? 0))
-      .filter((n) => n > 0)
-    if (prices.length) {
-      row.tier_min_price = Math.min(...prices)
-      row.tier_max_price = Math.max(...prices)
-    }
-    const firstMin = payload.tiers[0]?.min_qty
-    if (typeof firstMin === 'number' && firstMin > 0) {
-      row.min_wholesale_qty = firstMin
-    }
-  }
-  ElMessage.success('阶梯价已保存')
-  tierDrawerVisible.value = false
 }
 
 function levelTagType(l: DealerLevel) {
@@ -497,40 +410,6 @@ function levelTagType(l: DealerLevel) {
           </template>
         </el-table-column>
 
-        <el-table-column label="阶梯价" width="170">
-          <template #default="{ row }">
-            <template v-if="row.wholesale_enabled && row.tier_count > 0">
-              <div class="tier-price">
-                ¥ {{ row.tier_min_price.toFixed(0) }} -
-                {{ row.tier_max_price.toFixed(0) }}
-              </div>
-              <div class="tier-meta">
-                <el-tag size="small" type="warning" effect="plain">
-                  {{ row.tier_count }} 档
-                </el-tag>
-                <el-button
-                  link
-                  type="primary"
-                  size="small"
-                  style="padding: 0 0 0 8px"
-                  @click="openPriceTier(row)"
-                >
-                  查看
-                </el-button>
-              </div>
-            </template>
-            <el-button
-              v-else-if="row.wholesale_enabled"
-              link
-              type="primary"
-              size="small"
-              @click="openPriceTier(row)"
-            >
-              配置阶梯价
-            </el-button>
-            <span v-else class="text-placeholder">—</span>
-          </template>
-        </el-table-column>
 
         <el-table-column label="授权等级" min-width="200">
           <template #default="{ row }">
@@ -600,9 +479,6 @@ function levelTagType(l: DealerLevel) {
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="primary" size="small" @click="handleSku(row)">SKU</el-button>
-            <el-button link type="primary" size="small" @click="openPriceTier(row)">
-              阶梯价
-            </el-button>
             <el-button link type="primary" size="small" @click="handleAuthorize(row)">
               授权
             </el-button>
@@ -625,13 +501,6 @@ function levelTagType(l: DealerLevel) {
       </div>
     </el-card>
 
-    <!-- 阶梯价抽屉 -->
-    <PriceTierConfig
-      v-model="tierDrawerVisible"
-      :sku="currentSku"
-      :tiers="currentTiers"
-      @save="handleTierSave"
-    />
   </div>
 </template>
 
@@ -741,16 +610,6 @@ function levelTagType(l: DealerLevel) {
   margin-top: 2px;
 }
 
-.tier-price {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--ym-danger);
-}
-.tier-meta {
-  margin-top: 6px;
-  display: flex;
-  align-items: center;
-}
 
 .level-tag {
   margin-right: 6px;
