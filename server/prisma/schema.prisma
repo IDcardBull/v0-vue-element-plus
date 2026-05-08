@@ -104,6 +104,10 @@ model User {
   avatar       String?    @db.VarChar(500)
   gender       Int?       // 0 未知 1 男 2 女
   role         String     @default("retail") @db.VarChar(16) // retail / dealer
+  // 用户来源端：retail=B2C 零售小程序，wholesale=批发小程序。
+  // 同一个微信号在两个小程序里 openid 不同，会产生两条 User 记录，互不干扰。
+  // 影响：登录拿 openid 用对应 AppID+Secret，支付下单给微信传对应 AppID。
+  appChannel   String     @default("retail") @map("app_channel") @db.VarChar(16)
   levelId      Int?       @map("level_id")
   points       Int        @default(0)
   balance      Decimal    @default(0) @db.Decimal(12, 2)

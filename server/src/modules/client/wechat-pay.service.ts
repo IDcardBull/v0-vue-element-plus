@@ -14,46 +14,80 @@ import axios from 'axios'
 // wechatpay-node-v3 是主流的微信支付 V3 SDK
 import WxPay from 'wechatpay-node-v3'
 
+/** 小程序端标识 */
+export type MiniChannel = 'retail' | 'wholesale'
+
 /**
- * 微信支付 V3 服务
+ * 微信支付 V3 服务 + 多端微信登录
  *
- * 依赖的环境变量（在 server/.env 配置）：
- *   WX_APPID                 小程序 AppID
- *   WX_PAY_MCHID             商户号
- *   WX_PAY_SERIAL_NO         商户 API 证书序列号
- *   WX_PAY_PRIVATE_KEY_PATH  apiclient_key.pem 绝对路径
- *   WX_PAY_API_V3_KEY        APIv3 密钥（32 位）
- *   WX_PAY_NOTIFY_URL        支付结果回调 URL（公网可访问，HTTPS）
+ * 业务约定：
+ * - 零售（B2C, retail）小程序：完整微信支付链路（JSAPI 下单 / 回调 / 发货录入 / 订阅消息）
+ * - 批发（wholesale）小程序：B2B 提交采购单 → 客服线下结算，**不调起微信支付**
+ *   所以批发端只需要它自己的 AppID/Secret 用于 jscode2session 登录拿 openid，
+ *   不需要支付商户号；本类的支付方法不会被批发用户触发
  *
- * 任一项缺失时，所有方法都会抛出 503，方便本地没有支付资质时调试其他功能。
+ * 不同 AppID 的 openid 互不通用；同一微信号在两个小程序里 openid 不同，
+ * 在 User 表会自动产生两条记录，互不干扰。
+ *
+ * 环境变量（server/.env）：
+ *   零售（必填，参与支付）：
+ *     WX_APPID                 / WX_APPID_RETAIL    （兼容老配置 WX_APPID）
+ *     WX_SECRET                / WX_SECRET_RETAIL
+ *   批发（可选，仅 jscode2session/access_token 用，不接支付）：
+ *     WX_APPID_WHOLESALE
+ *     WX_SECRET_WHOLESALE
+ *   微信支付商户号配置（仅零售用到）：
+ *     WX_PAY_MCHID             商户号
+ *     WX_PAY_SERIAL_NO         商户 API 证书序列号
+ *     WX_PAY_PRIVATE_KEY_PATH  apiclient_key.pem 路径
+ *     WX_PAY_API_V3_KEY        APIv3 密钥（32 位）
+ *     WX_PAY_NOTIFY_URL        支付结果回调 URL（HTTPS 公网可达）
+ *
+ * 支付配置缺失时支付接口返 503，但不影响批发端登录和采购单提交。
  */
 @Injectable()
 export class WechatPayService {
   private readonly logger = new Logger(WechatPayService.name)
   private pay?: WxPay
-  private appid?: string
+  /** channel -> appid 映射 */
+  private appidMap: Record<MiniChannel, string | undefined> = {
+    retail: undefined,
+    wholesale: undefined,
+  }
+  /** channel -> 小程序 secret（用于 jscode2session / cgi-bin/token） */
+  private secretMap: Record<MiniChannel, string | undefined> = {
+    retail: undefined,
+    wholesale: undefined,
+  }
   private mchid?: string
   private notifyUrl?: string
   private apiV3Key?: string
   private privateKeyPem?: Buffer
-  private accessTokenCache?: { token: string; expiresAt: number }
+  /** channel 维度的 access_token 缓存（不同 appid 的 token 互不通用） */
+  private accessTokenCacheMap: Partial<
+    Record<MiniChannel, { token: string; expiresAt: number }>
+  > = {}
 
   constructor(private readonly config: ConfigService) {
-    this.appid = this.config.get<string>('WX_APPID')
+    // 兼容老配置：WX_APPID/WX_SECRET 当 retail 默认
+    this.appidMap.retail =
+      this.config.get<string>('WX_APPID_RETAIL') ||
+      this.config.get<string>('WX_APPID')
+    this.secretMap.retail =
+      this.config.get<string>('WX_SECRET_RETAIL') ||
+      this.config.get<string>('WX_SECRET')
+    this.appidMap.wholesale = this.config.get<string>('WX_APPID_WHOLESALE')
+    this.secretMap.wholesale = this.config.get<string>('WX_SECRET_WHOLESALE')
+
     this.mchid = this.config.get<string>('WX_PAY_MCHID')
     this.notifyUrl = this.config.get<string>('WX_PAY_NOTIFY_URL')
     this.apiV3Key = this.config.get<string>('WX_PAY_API_V3_KEY')
     const serialNo = this.config.get<string>('WX_PAY_SERIAL_NO')
     const keyPath = this.config.get<string>('WX_PAY_PRIVATE_KEY_PATH')
 
-    if (
-      !this.appid ||
-      !this.mchid ||
-      !this.notifyUrl ||
-      !this.apiV3Key ||
-      !serialNo ||
-      !keyPath
-    ) {
+    // 至少要有一个 channel 配齐 appid 才有意义
+    const anyAppid = this.appidMap.retail || this.appidMap.wholesale
+    if (!anyAppid || !this.mchid || !this.notifyUrl || !this.apiV3Key || !serialNo || !keyPath) {
       this.logger.warn('[WechatPay] 未完整配置，支付相关接口将返回 503')
       return
     }
@@ -81,17 +115,46 @@ export class WechatPayService {
       const absPath = path.isAbsolute(keyPath) ? keyPath : path.resolve(process.cwd(), keyPath)
       const privateKey = fs.readFileSync(absPath)
       this.privateKeyPem = privateKey
+      // SDK 的 appid 仅作为内部缺省值；下单时我们一律在 body 里显式传 channel 对应的 appid 覆盖
       this.pay = new WxPay({
-        appid: this.appid,
+        appid: this.appidMap.retail || this.appidMap.wholesale,
         mchid: this.mchid,
         serial_no: serialNo,
-        publicKey: privateKey, // V3 SDK 里字段名，用的是商户私钥
+        publicKey: privateKey,
         privateKey,
       } as any)
-      this.logger.log('[WechatPay] 初始化成功')
+      this.logger.log(
+        `[WechatPay] 初始化成功 (retail=${this.appidMap.retail ? '✓' : '✗'}, wholesale=${this.appidMap.wholesale ? '✓' : '✗'})`,
+      )
     } catch (e) {
       this.logger.error('[WechatPay] 商户私钥加载失败', (e as Error).stack)
     }
+  }
+
+  /**
+   * 拿到指定 channel 的 appid。
+   * - retail 没配 → 503（管理员需要配 WX_APPID/WX_SECRET）
+   * - wholesale → 直接报"批发端不支持线上支付"，避免静默回落 retail 触发
+   *   APPID_MCHID_NOT_MATCH 这种很难定位的错误
+   */
+  private getAppidByChannel(channel: MiniChannel): string {
+    if (channel === 'wholesale') {
+      throw new BadRequestException(
+        '批发端订单不支持线上支付，请联系客服线下结算',
+      )
+    }
+    const appid = this.appidMap[channel]
+    if (!appid) {
+      throw new ServiceUnavailableException(
+        `${channel} 端微信支付未配置 (缺少 WX_APPID_${channel.toUpperCase()})`,
+      )
+    }
+    return appid
+  }
+
+  /** 公开：让外部模块（如 client-auth）拿 channel 对应的 appid+secret 调 jscode2session */
+  getChannelCreds(channel: MiniChannel): { appid?: string; secret?: string } {
+    return { appid: this.appidMap[channel], secret: this.secretMap[channel] }
   }
 
   /**
@@ -145,6 +208,7 @@ export class WechatPayService {
     amount: number,
     openid: string,
     description: string,
+    channel: MiniChannel = 'retail',
   ): Promise<{
     timeStamp: string
     nonceStr: string
@@ -161,9 +225,11 @@ export class WechatPayService {
       throw new BadRequestException('支付金额必须大于 0')
     }
 
+    const appid = this.getAppidByChannel(channel)
+
     // 1. 调用统一下单
     const body: any = {
-      appid: this.appid,
+      appid,
       mchid: this.mchid,
       description: (description || orderNo).slice(0, 127),
       out_trade_no: orderNo,
@@ -220,11 +286,11 @@ export class WechatPayService {
       )
     }
 
-    // 2. 本地按官方算法生成 wx.requestPayment 5 个参数
+    // 2. 本地按官方算法生成 wx.requestPayment 5 个参数（appId 必须用同一个 channel 的）
     const timeStamp = Math.floor(Date.now() / 1000).toString()
     const nonceStr = crypto.randomBytes(16).toString('hex')
     const pkg = `prepay_id=${result.prepay_id}`
-    const message = `${this.appid}\n${timeStamp}\n${nonceStr}\n${pkg}\n`
+    const message = `${appid}\n${timeStamp}\n${nonceStr}\n${pkg}\n`
     const paySign = this.rsaSignBase64(message)
 
     return {
@@ -247,7 +313,7 @@ export class WechatPayService {
   }
 
   /**
-   * 兼容旧调用方：内部委托 createJsApiOrder。
+   * 兼容旧调用方：内部委托 createJsApiOrder，channel 默认 retail。
    * @returns 前端 wx.requestPayment 参数（不含 prepayId）
    */
   async jsapi(params: {
@@ -255,28 +321,34 @@ export class WechatPayService {
     orderNo: string
     amountYuan: number // 元，内部转分
     description: string
+    channel?: MiniChannel
   }) {
     const r = await this.createJsApiOrder(
       params.orderNo,
       params.amountYuan,
       params.openid,
       params.description,
+      params.channel || 'retail',
     )
     const { prepayId, ...rest } = r
     void prepayId
     return rest
   }
 
-  private async getMiniProgramAccessToken() {
+  /**
+   * 获取指定 channel 的小程序 access_token。不同小程序的 token 互相独立。
+   * 用途：发货信息录入、订阅消息推送等。
+   */
+  private async getMiniProgramAccessToken(channel: MiniChannel = 'retail') {
     const now = Date.now()
-    if (this.accessTokenCache && this.accessTokenCache.expiresAt > now + 60_000) {
-      return this.accessTokenCache.token
-    }
+    const cached = this.accessTokenCacheMap[channel]
+    if (cached && cached.expiresAt > now + 60_000) return cached.token
 
-    const appid = this.config.get<string>('WX_APPID')
-    const secret = this.config.get<string>('WX_SECRET')
+    const { appid, secret } = this.getChannelCreds(channel)
     if (!appid || !secret) {
-      throw new ServiceUnavailableException('微信小程序未配置，无法调用发货信息录入接口')
+      throw new ServiceUnavailableException(
+        `${channel} 端微信小程序未配置 (缺少 WX_APPID_${channel.toUpperCase()} 或 WX_SECRET_${channel.toUpperCase()})，无法调用 access_token 接口`,
+      )
     }
 
     const { data } = await axios.get('https://api.weixin.qq.com/cgi-bin/token', {
@@ -287,11 +359,11 @@ export class WechatPayService {
       throw new InternalServerErrorException(data?.errmsg || '获取微信 access_token 失败')
     }
 
-    this.accessTokenCache = {
+    this.accessTokenCacheMap[channel] = {
       token: data.access_token,
       expiresAt: now + Number(data.expires_in || 7200) * 1000,
     }
-    return data.access_token
+    return data.access_token as string
   }
 
   async uploadShippingInfo(params: {
@@ -300,13 +372,14 @@ export class WechatPayService {
     openid?: string | null
     logisticsCompany: string
     trackingNo: string
+    channel?: MiniChannel
   }) {
     if (!params.transactionId || !params.openid) {
       this.logger.warn(`[WechatPay] 跳过发货信息录入: transactionId/openid 缺失, order=${params.outTradeNo}`)
       return { skipped: true, reason: 'missing_transaction_or_openid' }
     }
 
-    const accessToken = await this.getMiniProgramAccessToken()
+    const accessToken = await this.getMiniProgramAccessToken(params.channel || 'retail')
     const payload = {
       order_key: { order_number_type: 2, transaction_id: params.transactionId },
       logistics_type: 1,
@@ -353,8 +426,13 @@ export class WechatPayService {
     orderNo: string
     logisticsCompany: string
     trackingNo: string
+    channel?: MiniChannel
   }) {
-    const templateId = this.config.get<string>('WX_SUBSCRIBE_SHIPPED_TEMPLATE_ID')
+    const channel = params.channel || 'retail'
+    // 模板 ID 也分端配置；若 channel 没有专属模板，回退到 WX_SUBSCRIBE_SHIPPED_TEMPLATE_ID
+    const templateId =
+      this.config.get<string>(`WX_SUBSCRIBE_SHIPPED_TEMPLATE_ID_${channel.toUpperCase()}`) ||
+      this.config.get<string>('WX_SUBSCRIBE_SHIPPED_TEMPLATE_ID')
     if (!templateId) {
       return { skipped: true, reason: 'template_not_configured' }
     }
@@ -362,7 +440,7 @@ export class WechatPayService {
       return { skipped: true, reason: 'missing_openid' }
     }
 
-    const accessToken = await this.getMiniProgramAccessToken()
+    const accessToken = await this.getMiniProgramAccessToken(channel)
     const payload = {
       touser: params.openid,
       template_id: templateId,

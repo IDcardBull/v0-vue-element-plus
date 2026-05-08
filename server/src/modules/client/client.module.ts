@@ -29,5 +29,7 @@ import { WechatPayService } from './wechat-pay.service'
     WechatPayNotifyController,
   ],
   providers: [ClientAddressService, WechatPayService],
+  // 导出 WechatPayService 给 ClientAuthModule 使用（多端 AppID 登录）
+  exports: [WechatPayService],
 })
 export class ClientModule {}

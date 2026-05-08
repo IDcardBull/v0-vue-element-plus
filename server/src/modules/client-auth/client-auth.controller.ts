@@ -1,12 +1,18 @@
 import { Body, Controller, Post } from '@nestjs/common'
-import { IsNotEmpty } from 'class-validator'
+import { IsNotEmpty, IsOptional, IsIn } from 'class-validator'
 import { ClientAuthService } from './client-auth.service'
 import { Public } from '@/common/decorators/public.decorator'
 import { CurrentUser, JwtPayload } from '@/common/decorators/current-user.decorator'
+import { MiniChannel } from '../client/wechat-pay.service'
 
 class WxLoginDto {
   @IsNotEmpty({ message: 'code 不能为空' })
   code: string
+
+  // channel 决定用哪个小程序的 AppID/Secret 调 jscode2session。默认 retail。
+  @IsOptional()
+  @IsIn(['retail', 'wholesale'])
+  channel?: MiniChannel
 }
 
 class PhoneLoginDto {
@@ -15,6 +21,10 @@ class PhoneLoginDto {
 
   @IsNotEmpty({ message: '验证码不能为空' })
   code: string
+
+  @IsOptional()
+  @IsIn(['retail', 'wholesale'])
+  channel?: MiniChannel
 }
 
 class BindPhoneDto {
@@ -29,20 +39,20 @@ export class ClientAuthController {
   @Public()
   @Post('mini-login')
   miniLogin(@Body() dto: WxLoginDto) {
-    return this.svc.miniLogin(dto.code)
+    return this.svc.miniLogin(dto.code, dto.channel || 'retail')
   }
 
   // 文档中常用别名；与 mini-login 等价
   @Public()
   @Post('wechat-login')
   wechatLogin(@Body() dto: WxLoginDto) {
-    return this.svc.miniLogin(dto.code)
+    return this.svc.miniLogin(dto.code, dto.channel || 'retail')
   }
 
   @Public()
   @Post('phone-login')
   phoneLogin(@Body() dto: PhoneLoginDto) {
-    return this.svc.phoneLogin(dto.phone, dto.code)
+    return this.svc.phoneLogin(dto.phone, dto.code, dto.channel || 'retail')
   }
 
   @Post('bind-phone')

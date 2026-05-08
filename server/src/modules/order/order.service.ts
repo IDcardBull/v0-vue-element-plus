@@ -386,6 +386,10 @@ export class OrderService {
     })
 
     if (shippedOrder.payMethod === 'wechat') {
+      // 用户来自哪个小程序就用对应 AppID 的 access_token 调发货录入和订阅消息接口
+      const userChannel: 'retail' | 'wholesale' =
+        shippedOrder.user?.appChannel === 'wholesale' ? 'wholesale' : 'retail'
+
       this.wechatPay
         .uploadShippingInfo({
           transactionId: shippedOrder.payTransId,
@@ -393,6 +397,7 @@ export class OrderService {
           openid: shippedOrder.user?.openid || null,
           logisticsCompany: company,
           trackingNo,
+          channel: userChannel,
         })
         .catch((error) => {
           this.logger.warn(`微信发货信息录入异常: ${error?.message || error}`)
@@ -404,6 +409,7 @@ export class OrderService {
           orderNo: shippedOrder.orderNo,
           logisticsCompany: company,
           trackingNo,
+          channel: userChannel,
         })
         .catch((error) => {
           this.logger.warn(`微信订阅消息发送异常: ${error?.message || error}`)
