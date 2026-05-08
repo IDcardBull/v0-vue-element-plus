@@ -58,6 +58,25 @@ export class WechatPayService {
       return
     }
 
+    // 校验 notify_url 必须是合法 URL，且只有一个协议头。
+    // 微信支付要求公网可达；natapp 隧道地址常被复制粘贴反复加协议头导致 400。
+    if (!this.isValidNotifyUrl(this.notifyUrl)) {
+      this.logger.error(
+        `[WechatPay] WX_PAY_NOTIFY_URL 格式不合法："${this.notifyUrl}"。\n` +
+          '  必须是单个完整 URL，例如：https://xxxx.natappfree.cc/api/wechat/pay-callback\n' +
+          '  支付相关接口将返回 503',
+      )
+      return
+    }
+    // 微信支付 V3 JSAPI 要求 notify_url 必须 https，使用 http 几乎一定会被微信侧拒绝
+    if (this.notifyUrl.startsWith('http://')) {
+      this.logger.warn(
+        `[WechatPay] WX_PAY_NOTIFY_URL 当前使用 http 协议："${this.notifyUrl}"。\n` +
+          '  微信支付 V3 要求 notify_url 必须为 https，下单接口可能被微信侧返回 400。\n' +
+          '  请改为 https://...（natapp 等隧道工具同一隧道通常同时提供 https 入口）',
+      )
+    }
+
     try {
       const absPath = path.isAbsolute(keyPath) ? keyPath : path.resolve(process.cwd(), keyPath)
       const privateKey = fs.readFileSync(absPath)
@@ -72,6 +91,23 @@ export class WechatPayService {
       this.logger.log('[WechatPay] 初始化成功')
     } catch (e) {
       this.logger.error('[WechatPay] 商户私钥加载失败', (e as Error).stack)
+    }
+  }
+
+  /**
+   * 校验 notify_url：必须能被 URL 构造器解析，且全字符串里只含一个 "://"。
+   * 排除 "https://http://xxx" 这种被反复加协议头的脏值。
+   */
+  private isValidNotifyUrl(url: string): boolean {
+    try {
+      const u = new URL(url)
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
+      // 整串只允许出现一次 "://"
+      const occurrences = (url.match(/:\/\//g) || []).length
+      if (occurrences !== 1) return false
+      return true
+    } catch {
+      return false
     }
   }
 
