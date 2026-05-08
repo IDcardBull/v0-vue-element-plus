@@ -29,8 +29,15 @@ export class ClientAuthService {
 
     if (!appid || !secret) {
       if (devFallbackEnabled) return this.devMiniLogin('missing-config', channel)
+      // 把缺哪个变量、当前生效什么都暴露给前端，避免运营只看到"401 Unauthorized"
+      const missing: string[] = []
+      if (!appid) missing.push(`WX_APPID_${channel.toUpperCase()}`)
+      if (!secret) missing.push(`WX_SECRET_${channel.toUpperCase()}`)
       throw new UnauthorizedException(
-        `${channel} 端微信小程序未配置 (缺少 WX_APPID_${channel.toUpperCase()} / WX_SECRET_${channel.toUpperCase()})`,
+        `${channel === 'wholesale' ? '批发' : '零售'}端微信小程序未配置：` +
+          `\n  → 服务端 .env 缺少 ${missing.join(' 和 ')}` +
+          `\n  → 当前生效：appid=${appid || '(空)'} secret=${secret ? '已配置' : '(空)'}` +
+          `\n  → 配齐后必须重启后端进程才会生效`,
       )
     }
 
