@@ -41,6 +41,10 @@ export function refundOrder(id: number, amount?: number, reason?: string) {
   return request.post<any, any>(`/admin/orders/${id}/refund`, { amount, reason })
 }
 
+export function markOrderPaid(id: number) {
+  return request.patch<any, any>(`/admin/orders/${id}/mark-paid`)
+}
+
 export const orderApi = {
   list: fetchOrders,
   get: fetchOrder,
@@ -49,4 +53,5 @@ export const orderApi = {
   complete: completeOrder,
   close: closeOrder,
   refund: refundOrder,
+  markPaid: markOrderPaid,
 }

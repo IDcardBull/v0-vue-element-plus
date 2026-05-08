@@ -154,8 +154,10 @@ function mapOrderStatus(s: any): OrderStatus {
     pending_ship: 'pending_ship',
     shipped: 'shipped',
     completed: 'completed',
+    after_sale: 'refund',
     refund: 'refund',
     refunding: 'refund',
+    refunded: 'refund',
     closed: 'closed',
     cancelled: 'closed',
   }
@@ -405,6 +407,46 @@ async function handleShip(order: Order) {
 function copyOrderNo(no: string) {
   navigator.clipboard?.writeText(no)
   ElMessage.success('订单号已复制')
+}
+
+async function handleMarkPaid(order: Order) {
+  try {
+    await ElMessageBox.confirm(
+      `确认将订单 ${order.order_no} 标记为已付款？此操作通常用于线下汇款 / 对公转账场景。`,
+      '标记已付款',
+      { type: 'warning', confirmButtonText: '确认标记', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await orderApi.markPaid(Number(order.id))
+    ElMessage.success('已标记为已付款，订单进入待发货')
+    await loadOrders()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '标记失败')
+  }
+}
+
+async function handleClose(order: Order) {
+  try {
+    const { value: reason } = await ElMessageBox.prompt(
+      `确认关闭订单 ${order.order_no}？`,
+      '关闭订单',
+      {
+        type: 'warning',
+        confirmButtonText: '确认关闭',
+        cancelButtonText: '取消',
+        inputPlaceholder: '关闭原因（可选）',
+      },
+    )
+    await orderApi.close(Number(order.id), reason)
+    ElMessage.success('订单已关闭')
+    await loadOrders()
+  } catch (e: any) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e?.message || '关闭失败')
+  }
 }
 
 const detailVisible = ref(false)
@@ -705,9 +747,16 @@ function exportData() {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link :icon="View" @click="viewDetail(row)">详情</el-button>
+            <el-button
+              v-if="row.status === 'pending_pay'"
+              type="success"
+              link
+              :icon="Money"
+              @click="handleMarkPaid(row)"
+            >标记已付</el-button>
             <el-button
               v-if="row.status === 'pending_ship'"
               type="primary"
@@ -719,6 +768,7 @@ function exportData() {
               v-if="row.status === 'pending_pay'"
               type="danger"
               link
+              @click="handleClose(row)"
             >关闭</el-button>
             <el-button
               v-if="row.status === 'shipped' || row.status === 'completed'"
