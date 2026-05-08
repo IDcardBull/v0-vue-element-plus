@@ -290,17 +290,45 @@ export class WechatPayService {
       throw new InternalServerErrorException(`${code ? code + ': ' : ''}${msg}`)
     }
 
-    if (!result?.prepay_id) {
+    // wechatpay-node-v3 在成功时返回 { status: 200, data: { appId, timeStamp,
+    // nonceStr, package, signType, paySign } } —— SDK 已帮我们算好 wx.requestPayment
+    // 全套 5 参数，直接透传即可。
+    //
+    // 兼容性说明：不同版本 SDK 可能直接返回 { prepay_id } 或 { data: {...prepay_id} }
+    // 顶层裸 { prepay_id }，因此下方按优先级回退到本地签名。
+    const sdkSigned = result?.data
+    if (
+      sdkSigned &&
+      typeof sdkSigned === 'object' &&
+      sdkSigned.paySign &&
+      sdkSigned.package &&
+      sdkSigned.timeStamp &&
+      sdkSigned.nonceStr
+    ) {
+      const pkg: string = sdkSigned.package
+      const prepayId = pkg.startsWith('prepay_id=') ? pkg.slice('prepay_id='.length) : pkg
+      return {
+        timeStamp: String(sdkSigned.timeStamp),
+        nonceStr: String(sdkSigned.nonceStr),
+        package: pkg,
+        signType: (sdkSigned.signType as 'RSA') || 'RSA',
+        paySign: sdkSigned.paySign,
+        prepayId,
+      }
+    }
+
+    // 兜底：拿 prepay_id 自己签
+    const prepayId = result?.prepay_id || result?.data?.prepay_id
+    if (!prepayId) {
       this.logger.error('[WechatPay] 下单返回缺少 prepay_id: ' + JSON.stringify(result))
       throw new InternalServerErrorException(
         result?.message || result?.code || '微信下单失败',
       )
     }
 
-    // 2. 本地按官方算法生成 wx.requestPayment 5 个参数（appId 必须用同一个 channel 的）
     const timeStamp = Math.floor(Date.now() / 1000).toString()
     const nonceStr = crypto.randomBytes(16).toString('hex')
-    const pkg = `prepay_id=${result.prepay_id}`
+    const pkg = `prepay_id=${prepayId}`
     const message = `${appid}\n${timeStamp}\n${nonceStr}\n${pkg}\n`
     const paySign = this.rsaSignBase64(message)
 
@@ -310,7 +338,7 @@ export class WechatPayService {
       package: pkg,
       signType: 'RSA',
       paySign,
-      prepayId: result.prepay_id,
+      prepayId,
     }
   }
 
