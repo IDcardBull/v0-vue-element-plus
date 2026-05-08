@@ -183,6 +183,36 @@ export class WechatPayService {
       throw new InternalServerErrorException(err?.message || '微信下单失败')
     }
 
+    // wechatpay-node-v3 SDK 的特殊行为：HTTP 4xx/5xx 时不抛错，
+    // 而是把 { status, errRaw, ... } 当 resolve 值返回。这里识别出来，
+    // 拿微信响应 body 里真正的 code/message 抛 503/400。
+    if (result && typeof result === 'object' && (result.status >= 400 || result.errRaw)) {
+      // 尝试从多个可能的位置挖出真实 body
+      const raw = result.errRaw || result
+      const bodyText: string | undefined =
+        raw?.response?.text ||
+        raw?.response?.body ||
+        raw?.response?.data ||
+        raw?.body ||
+        raw?.data
+      let parsed: any = bodyText
+      if (typeof bodyText === 'string') {
+        try {
+          parsed = JSON.parse(bodyText)
+        } catch {
+          /* 非 JSON 直接保留原文 */
+        }
+      }
+      const code = parsed?.code || raw?.code
+      const msg = parsed?.message || raw?.message || '微信下单失败'
+      this.logger.error(
+        `[WechatPay] 微信下单返回 ${result.status || raw?.status}：` +
+          `code=${code} message=${msg}\n` +
+          `  完整响应: ${JSON.stringify(parsed) || bodyText || JSON.stringify(result)}`,
+      )
+      throw new InternalServerErrorException(`${code ? code + ': ' : ''}${msg}`)
+    }
+
     if (!result?.prepay_id) {
       this.logger.error('[WechatPay] 下单返回缺少 prepay_id: ' + JSON.stringify(result))
       throw new InternalServerErrorException(
@@ -457,7 +487,7 @@ export class WechatPayService {
       throw new UnauthorizedException('回调时间戳偏差过大，疑似重放攻击')
     }
 
-    // 1. 验签
+    // 1. 验��
     const certs = await this.loadPlatformCerts()
     const certPem = certs.get(String(serial))
     if (!certPem) {
