@@ -249,4 +249,89 @@ export class CustomerService {
     })
     return this.buildItem(updated, 0, null)
   }
+
+  /**
+   * 客户管理首屏 4 张统计卡：
+   * - total       零售客户总数（角色=retail 不分启用状态）
+   * - newThisMonth 本月新注册数（createdAt >= 当月 1 号 0 点）
+   * - paid        历史下过单的客户数（distinct userId 在 order 表）
+   * - paidRate    转化率 = paid / total * 100
+   * - avgOrder    所有零售订单的客单价（completed/shipped/pending_ship 都算
+   *               已确认收入；不含 closed/refunded/pending_pay）
+   * - avgOrderPrev 上月同口径，环比用
+   * - avgOrderTrend  上述两值的环比百分比，正数=增长
+   * - active30    最近 30 天有过下单行为的客户数
+   * - activeRate  active30 / total * 100
+   */
+  async getStats() {
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const day30Ago = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+
+    const REVENUE_STATUSES = ['completed', 'shipped', 'pending_ship']
+
+    const [total, newThisMonth, paidGroup, monthAvgRows, lastMonthAvgRows, activeGroup] =
+      await Promise.all([
+        this.prisma.user.count({ where: { role: 'retail' } }),
+        this.prisma.user.count({
+          where: { role: 'retail', createdAt: { gte: monthStart } },
+        }),
+        // 历史下过单的客户去重：按 userId groupBy 后取数组长度
+        this.prisma.order.groupBy({
+          by: ['userId'],
+          where: { channel: 'retail', userId: { not: null } },
+          _count: { _all: true },
+        }),
+        // 本月客单价
+        this.prisma.order.aggregate({
+          where: {
+            channel: 'retail',
+            status: { in: REVENUE_STATUSES },
+            createdAt: { gte: monthStart },
+          },
+          _avg: { totalAmount: true },
+        }),
+        // 上月客单价（环比基线）
+        this.prisma.order.aggregate({
+          where: {
+            channel: 'retail',
+            status: { in: REVENUE_STATUSES },
+            createdAt: { gte: lastMonthStart, lt: monthStart },
+          },
+          _avg: { totalAmount: true },
+        }),
+        // 30 天内活跃用户：order 表中 createdAt>30天前 的 distinct userId
+        this.prisma.order.groupBy({
+          by: ['userId'],
+          where: {
+            channel: 'retail',
+            userId: { not: null },
+            createdAt: { gte: day30Ago },
+          },
+        }),
+      ])
+
+    const paid = paidGroup.length
+    const active = activeGroup.length
+    const avgOrder = Math.round(Number(monthAvgRows._avg.totalAmount || 0))
+    const avgOrderPrev = Math.round(Number(lastMonthAvgRows._avg.totalAmount || 0))
+
+    let avgOrderTrend: number | null = null
+    if (avgOrderPrev > 0) {
+      avgOrderTrend = Number((((avgOrder - avgOrderPrev) / avgOrderPrev) * 100).toFixed(1))
+    }
+
+    return {
+      total,
+      newThisMonth,
+      paid,
+      paidRate: total > 0 ? Number(((paid / total) * 100).toFixed(1)) : 0,
+      avgOrder,
+      avgOrderPrev,
+      avgOrderTrend, // 可能为 null（上月无数据无法环比）
+      active: active,
+      activeRate: total > 0 ? Number(((active / total) * 100).toFixed(1)) : 0,
+    }
+  }
 }

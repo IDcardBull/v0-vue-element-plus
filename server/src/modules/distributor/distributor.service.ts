@@ -317,4 +317,83 @@ export class DistributorService {
 
     return this.buildItem(updated, 0, 0)
   }
+
+  /**
+   * 分销商管理首屏 4 张统计卡：
+   * - total           分销商总数
+   * - approved        已通过数
+   * - pending         待审核数
+   * - rejected        驳回数
+   * - disabled        已禁用数
+   * - totalAmount     全部分销商累计批发订单金额（completed/shipped/pending_ship 计入）
+   * - thisMonthAmount 本月批发订单金额（环比展示用）
+   * - lastMonthAmount 上月同口径
+   * - amountTrend     环比百分比，正数=增长（上月 0 时返回 null）
+   */
+  async getStats() {
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const REVENUE_STATUSES = ['completed', 'shipped', 'pending_ship']
+
+    const [
+      total,
+      approved,
+      pending,
+      rejected,
+      disabled,
+      allAmountAgg,
+      monthAmountAgg,
+      lastMonthAmountAgg,
+    ] = await Promise.all([
+      this.prisma.distributor.count(),
+      this.prisma.distributor.count({ where: { auditStatus: 'approved' } }),
+      this.prisma.distributor.count({ where: { auditStatus: 'pending' } }),
+      this.prisma.distributor.count({ where: { auditStatus: 'rejected' } }),
+      this.prisma.distributor.count({ where: { auditStatus: 'disabled' } }),
+      this.prisma.order.aggregate({
+        where: { channel: 'wholesale', status: { in: REVENUE_STATUSES } },
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.order.aggregate({
+        where: {
+          channel: 'wholesale',
+          status: { in: REVENUE_STATUSES },
+          createdAt: { gte: monthStart },
+        },
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.order.aggregate({
+        where: {
+          channel: 'wholesale',
+          status: { in: REVENUE_STATUSES },
+          createdAt: { gte: lastMonthStart, lt: monthStart },
+        },
+        _sum: { totalAmount: true },
+      }),
+    ])
+
+    const totalAmount = Number(allAmountAgg._sum.totalAmount || 0)
+    const thisMonthAmount = Number(monthAmountAgg._sum.totalAmount || 0)
+    const lastMonthAmount = Number(lastMonthAmountAgg._sum.totalAmount || 0)
+
+    let amountTrend: number | null = null
+    if (lastMonthAmount > 0) {
+      amountTrend = Number(
+        (((thisMonthAmount - lastMonthAmount) / lastMonthAmount) * 100).toFixed(1),
+      )
+    }
+
+    return {
+      total,
+      approved,
+      pending,
+      rejected,
+      disabled,
+      totalAmount,
+      thisMonthAmount,
+      lastMonthAmount,
+      amountTrend,
+    }
+  }
 }

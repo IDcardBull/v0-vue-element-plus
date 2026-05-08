@@ -12,8 +12,25 @@ export function updateCustomer(id: number, data: any) {
   return request.patch<any, any>(`/admin/customers/${id}`, data)
 }
 
+export interface CustomerStats {
+  total: number
+  newThisMonth: number
+  paid: number
+  paidRate: number
+  avgOrder: number
+  avgOrderPrev: number
+  avgOrderTrend: number | null
+  active: number
+  activeRate: number
+}
+
+export function fetchCustomerStats() {
+  return request.get<any, CustomerStats>('/admin/customers/stats')
+}
+
 export const customerApi = {
   list: fetchCustomers,
   get: fetchCustomer,
   update: updateCustomer,
+  stats: fetchCustomerStats,
 }

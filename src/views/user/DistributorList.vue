@@ -103,6 +103,8 @@ async function loadDistributors() {
     loadError.value = e?.message || '后端服务不可用'
     allList.value = []
   }
+  // 列表刷新后顺带刷新统计卡，让 audit/update 后头部数字也实时变
+  loadStats()
 }
 
 onMounted(loadDistributors)
@@ -149,15 +151,27 @@ const pagedList = computed(() => {
 })
 
 /* --------------------------------- 统计数据 -------------------------------- */
-const stats = computed(() => {
-  const list = allList.value
-  return {
-    total: list.length,
-    approved: list.filter((d) => d.status === 'approved').length,
-    pending: list.filter((d) => d.status === 'pending').length,
-    totalAmount: list.reduce((sum, d) => sum + d.total_amount, 0),
-  }
+// 后端 /admin/distributors/stats 走全表聚合，本地分页不影响数字
+const stats = ref({
+  total: 0,
+  approved: 0,
+  pending: 0,
+  rejected: 0,
+  disabled: 0,
+  totalAmount: 0,
+  thisMonthAmount: 0,
+  lastMonthAmount: 0,
+  amountTrend: null as number | null,
 })
+
+async function loadStats() {
+  try {
+    const data = await distributorApi.stats()
+    if (data) Object.assign(stats.value, data)
+  } catch {
+    // 失败保持 0
+  }
+}
 
 /* --------------------------------- 操作方法 -------------------------------- */
 function resetFilters() {

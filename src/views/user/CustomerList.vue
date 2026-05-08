@@ -25,7 +25,12 @@
         <div class="stat-info">
           <div class="stat-label">会员总数</div>
           <div class="stat-value">{{ stats.total.toLocaleString() }}</div>
-          <div class="stat-sub"><span class="up">+128</span> 本月新增</div>
+          <div class="stat-sub">
+            <span :class="stats.newThisMonth > 0 ? 'up' : ''">
+              {{ stats.newThisMonth > 0 ? '+' : '' }}{{ stats.newThisMonth }}
+            </span>
+            本月新增
+          </div>
         </div>
       </div>
       <div class="stat-card">
@@ -41,7 +46,17 @@
         <div class="stat-info">
           <div class="stat-label">客单价</div>
           <div class="stat-value">¥{{ stats.avgOrder.toLocaleString() }}</div>
-          <div class="stat-sub"><span class="up">+8.2%</span> 环比</div>
+          <div class="stat-sub">
+            <template v-if="stats.avgOrderTrend !== null">
+              <span :class="stats.avgOrderTrend >= 0 ? 'up' : 'down'">
+                {{ stats.avgOrderTrend >= 0 ? '+' : '' }}{{ stats.avgOrderTrend }}%
+              </span>
+              环比
+            </template>
+            <template v-else>
+              暂无环比基线
+            </template>
+          </div>
         </div>
       </div>
       <div class="stat-card">
@@ -326,6 +341,8 @@ async function loadCustomers() {
     loadError.value = e?.message || '后端服务不可用'
     customers.value = []
   }
+  // 列表刷新后顺带刷新统计卡，让积分调整、状态切换后头部数字也实时变
+  loadStats()
 }
 
 onMounted(loadCustomers)
@@ -351,15 +368,27 @@ const pagedCustomers = computed(() => {
   return filteredCustomers.value.slice(start, start + pagination.size)
 })
 
-const stats = computed(() => {
-  const total = 8652
-  const paid = 5821
-  const paidRate = ((paid / total) * 100).toFixed(1)
-  const avgOrder = 486
-  const active = 2108
-  const activeRate = ((active / total) * 100).toFixed(1)
-  return { total, paid, paidRate, avgOrder, active, activeRate }
+// 统计卡片：从后端 /admin/customers/stats 拉真实数据
+const stats = ref({
+  total: 0,
+  newThisMonth: 0,
+  paid: 0,
+  paidRate: 0,
+  avgOrder: 0,
+  avgOrderPrev: 0,
+  avgOrderTrend: null as number | null,
+  active: 0,
+  activeRate: 0,
 })
+
+async function loadStats() {
+  try {
+    const data = await customerApi.stats()
+    if (data) Object.assign(stats.value, data)
+  } catch {
+    // 失败保持 0，不打扰用户；list 接口失败已经有红条提示
+  }
+}
 
 function levelLabel(level: string) {
   return levels.find((l) => l.value === level)?.label || level
@@ -541,6 +570,7 @@ function handleMessage(row: Customer) {
 .stat-value { font-size: 22px; font-weight: 600; color: #1f2d3d; margin-top: 2px; }
 .stat-sub { font-size: 12px; color: #909399; margin-top: 2px; }
 .up { color: #67c23a; font-weight: 600; }
+.down { color: #f56c6c; font-weight: 600; }
 
 .filter-card { margin-bottom: 16px; border-radius: 8px; }
 .filter-form :deep(.el-form-item) { margin-bottom: 0; }

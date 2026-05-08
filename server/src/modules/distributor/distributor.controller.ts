@@ -25,6 +25,12 @@ export class DistributorController {
     return this.distributorService.findAll(query)
   }
 
+  // 必须放在 :id 之前，否则 'stats' 会被 ParseIntPipe 拦下
+  @Get('stats')
+  stats() {
+    return this.distributorService.getStats()
+  }
+
   @Get(':id')
   detail(@Param('id', ParseIntPipe) id: number) {
     return this.distributorService.findById(id)

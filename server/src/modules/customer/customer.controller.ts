@@ -22,6 +22,12 @@ export class CustomerController {
     return this.customerService.findAll(query)
   }
 
+  // 注意：必须放在 :id 之前，否则 'stats' 会被 ParseIntPipe 拦下
+  @Get('stats')
+  stats() {
+    return this.customerService.getStats()
+  }
+
   @Get(':id')
   detail(@Param('id', ParseIntPipe) id: number) {
     return this.customerService.findById(id)
