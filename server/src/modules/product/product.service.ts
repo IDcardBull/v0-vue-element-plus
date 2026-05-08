@@ -6,6 +6,25 @@ function normalizeSkuImage(s: any) {
   return s?.image || s?.skuImage || s?.sku_image || s?.imageUrl || s?.image_url || undefined
 }
 
+/**
+ * 把前端表单 sku.priceTiers 规范化成 PriceTier.create 入参
+ * 入参示例：[{ minQty: 6, maxQty: 50, price: 38 }, ...]
+ */
+function normalizePriceTiers(raw: any): { minQty: number; maxQty: number | null; price: number; sort: number }[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((t: any, i: number) => ({
+      minQty: Number(t.minQty ?? t.min_qty ?? 1),
+      maxQty:
+        t.maxQty == null && t.max_qty == null
+          ? null
+          : Number(t.maxQty ?? t.max_qty),
+      price: Number(t.price ?? 0),
+      sort: Number(t.sort ?? i),
+    }))
+    .filter((t) => Number.isFinite(t.minQty) && t.minQty >= 1 && Number.isFinite(t.price) && t.price >= 0)
+}
+
 interface ProductQuery {
   keyword?: string
   categoryId?: number
@@ -54,7 +73,8 @@ export class ProductService {
           skus: {
             where: { status: 1 },
             orderBy: { id: 'asc' },
-            include: { priceTiers: { orderBy: { minQty: 'asc' } } },
+            // 列表的 SKU 不带 priceTiers，避免零售端拉到批发阶梯价
+            include: q.channel === 'wholesale' ? { priceTiers: { orderBy: { minQty: 'asc' } } } : undefined,
           },
           _count: { select: { skus: true } },
         },
@@ -62,28 +82,35 @@ export class ProductService {
       this.prisma.product.count({ where }),
     ])
 
-    // 对批发商品，附带阶梯价档位数量和总库存
+    // 实际可用库存 = sum(stocks.onHand - stocks.reserved)，按 product 聚合
     const ids = list.map((p) => p.id)
-    const skuAgg = await this.prisma.sku.groupBy({
-      by: ['productId'],
-      where: { productId: { in: ids } },
-      _sum: { stock: true },
-    })
-    const priceTiers = await this.prisma.priceTier.findMany({
+    const stockRows = await this.prisma.stock.findMany({
       where: { sku: { productId: { in: ids } } },
-      include: { sku: { select: { productId: true } } },
-      orderBy: [{ minQty: 'asc' }],
+      select: { skuId: true, onHand: true, reserved: true, sku: { select: { productId: true } } },
     })
-    const stockMap = new Map(skuAgg.map((s) => [s.productId, s._sum.stock || 0]))
-    const tierAggMap = new Map<number, { count: number; minPrice: number; maxPrice: number }>()
-    for (const tier of priceTiers) {
-      const productId = tier.sku.productId
-      const price = Number(tier.price)
-      const current = tierAggMap.get(productId) || { count: 0, minPrice: price, maxPrice: price }
-      current.count += 1
-      current.minPrice = Math.min(current.minPrice, price)
-      current.maxPrice = Math.max(current.maxPrice, price)
-      tierAggMap.set(productId, current)
+    const stockMap = new Map<number, number>()
+    for (const r of stockRows) {
+      const pid = r.sku.productId
+      stockMap.set(pid, (stockMap.get(pid) || 0) + Math.max(r.onHand - r.reserved, 0))
+    }
+
+    // 批发列表才需要返回阶梯价聚合
+    let tierAggMap = new Map<number, { count: number; minPrice: number; maxPrice: number }>()
+    if (q.channel === 'wholesale') {
+      const priceTiers = await this.prisma.priceTier.findMany({
+        where: { sku: { productId: { in: ids } } },
+        include: { sku: { select: { productId: true } } },
+        orderBy: [{ minQty: 'asc' }],
+      })
+      for (const tier of priceTiers) {
+        const productId = tier.sku.productId
+        const price = Number(tier.price)
+        const current = tierAggMap.get(productId) || { count: 0, minPrice: price, maxPrice: price }
+        current.count += 1
+        current.minPrice = Math.min(current.minPrice, price)
+        current.maxPrice = Math.max(current.maxPrice, price)
+        tierAggMap.set(productId, current)
+      }
     }
 
     return {
@@ -104,7 +131,11 @@ export class ProductService {
     }
   }
 
-  async findById(id: number) {
+  /**
+   * 商品详情。
+   * channel='retail' 时不返回 priceTiers / 批发字段，避免污染零售端。
+   */
+  async findById(id: number, channel?: 'retail' | 'wholesale' | 'admin') {
     const p = await this.prisma.product.findUnique({
       where: { id },
       include: {
@@ -112,12 +143,52 @@ export class ProductService {
         brand: true,
         skus: {
           orderBy: { id: 'asc' },
-          include: { priceTiers: { orderBy: { minQty: 'asc' } } },
+          include: channel === 'retail' ? undefined : { priceTiers: { orderBy: { minQty: 'asc' } } },
         },
       },
     })
     if (!p) throw new NotFoundException('商品不存在')
+
+    if (channel === 'retail') {
+      // 显式抹掉批发相关字段，让零售端只看到自己的零售价
+      const { wholesaleEnabled, minWholesaleQty, dealerLevels, ...rest } = p as any
+      void wholesaleEnabled
+      void minWholesaleQty
+      void dealerLevels
+      // SKU 也只保留零售相关字段
+      rest.skus = (p.skus || []).map((s: any) => {
+        const { priceTiers, ...skuRest } = s
+        void priceTiers
+        return skuRest
+      })
+      return rest
+    }
     return p
+  }
+
+  /** 取一个默认仓库 id：优先 isDefault=true，否则取最早建的那个 */
+  private async getDefaultWarehouseId(tx: any): Promise<number | null> {
+    const wh =
+      (await tx.warehouse.findFirst({ where: { isDefault: true, status: 1 } })) ||
+      (await tx.warehouse.findFirst({ where: { status: 1 }, orderBy: { id: 'asc' } }))
+    return wh?.id ?? null
+  }
+
+  /** 给指定 SKU 在默认仓库 upsert 一条 Stock 记录 */
+  private async upsertStockForSku(
+    tx: any,
+    skuId: number,
+    onHand: number,
+    warehouseId: number | null,
+  ) {
+    if (!warehouseId) return
+    const safeOnHand = Math.max(Number(onHand) || 0, 0)
+    await tx.stock.upsert({
+      where: { skuId_warehouseId: { skuId, warehouseId } },
+      create: { skuId, warehouseId, onHand: safeOnHand, reserved: 0 },
+      // onHand 仅在前端明确传新值时才覆盖；这里业务上"商品编辑里的库存数字"就代表默认仓数量
+      update: { onHand: safeOnHand },
+    })
   }
 
   async create(data: any) {
@@ -125,35 +196,80 @@ export class ProductService {
     const exist = await this.prisma.product.findUnique({ where: { code: rest.code } })
     if (exist) throw new BadRequestException('商品编码已存在')
 
-    return this.prisma.product.create({
-      data: {
-        ...rest,
-        skus: skus?.length
-          ? {
-              create: skus.map((s: any) => ({
-                code: s.code,
-                specs: s.specs || {},
-                image: normalizeSkuImage(s),
-                retailPrice: s.retailPrice || 0,
-                memberPrice: s.memberPrice,
-                costPrice: s.costPrice,
-                stock: s.stock || 0,
-                weight: s.weight,
-              })),
-            }
-          : undefined,
-      },
-      include: { skus: true },
+    const productScalars = {
+      ...rest,
+      // 显式接 freeShipping / shippingFee（兼容下划线/驼峰传参）
+      freeShipping: rest.freeShipping === true || rest.free_shipping === true,
+      shippingFee:
+        rest.shippingFee != null
+          ? Number(rest.shippingFee)
+          : rest.shipping_fee != null
+            ? Number(rest.shipping_fee)
+            : 0,
+    }
+    delete (productScalars as any).free_shipping
+    delete (productScalars as any).shipping_fee
+
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.product.create({
+        data: {
+          ...productScalars,
+          skus: skus?.length
+            ? {
+                create: skus.map((s: any) => ({
+                  code: s.code,
+                  specs: s.specs || {},
+                  image: normalizeSkuImage(s),
+                  retailPrice: Number(s.retailPrice || 0),
+                  // memberPrice 严格表示"零售会员价"，前端绝不能再把批发价塞进来
+                  memberPrice: s.memberPrice == null || s.memberPrice === '' ? null : Number(s.memberPrice),
+                  costPrice: s.costPrice == null || s.costPrice === '' ? null : Number(s.costPrice),
+                  stock: Number(s.stock || 0),
+                  weight: s.weight == null || s.weight === '' ? null : Number(s.weight),
+                  status: s.status ?? 1,
+                })),
+              }
+            : undefined,
+        },
+        include: { skus: true },
+      })
+
+      // 同步：给每个新建 SKU 在默认仓建 Stock + 写 PriceTier
+      const warehouseId = await this.getDefaultWarehouseId(tx)
+      for (let i = 0; i < (created.skus || []).length; i++) {
+        const newSku = created.skus[i]
+        const formSku = skus[i] || {}
+        await this.upsertStockForSku(tx, newSku.id, formSku.stock || 0, warehouseId)
+        const tiers = normalizePriceTiers(formSku.priceTiers)
+        if (tiers.length) {
+          await tx.priceTier.createMany({
+            data: tiers.map((t) => ({ skuId: newSku.id, ...t })),
+          })
+        }
+      }
+      return created
     })
   }
 
   async update(id: number, data: any) {
     const { skus, ...rest } = data
-    await this.findById(id)
-    // SKU 已可能被库存、流水、订单等表引用，不能直接删除；改为 upsert/禁用旧 SKU。
+    await this.findById(id, 'admin')
+
+    const productScalars: any = { ...rest }
+    if (rest.freeShipping !== undefined || rest.free_shipping !== undefined) {
+      productScalars.freeShipping = rest.freeShipping === true || rest.free_shipping === true
+    }
+    if (rest.shippingFee !== undefined || rest.shipping_fee !== undefined) {
+      const v = rest.shippingFee ?? rest.shipping_fee
+      productScalars.shippingFee = v == null || v === '' ? 0 : Number(v)
+    }
+    delete productScalars.free_shipping
+    delete productScalars.shipping_fee
+
     if (Array.isArray(skus)) {
       await this.prisma.$transaction(async (tx) => {
-        await tx.product.update({ where: { id }, data: rest })
+        await tx.product.update({ where: { id }, data: productScalars })
+        const warehouseId = await this.getDefaultWarehouseId(tx)
         const existingSkus = await tx.sku.findMany({ where: { productId: id } })
         const existingById = new Map(existingSkus.map((sku) => [sku.id, sku]))
         const existingByCode = new Map(existingSkus.map((sku) => [sku.code, sku]))
@@ -165,101 +281,96 @@ export class ProductService {
             code: s.code,
             specs: s.specs || {},
             image: normalizeSkuImage(s),
-            retailPrice: s.retailPrice || 0,
-            memberPrice: s.memberPrice,
-            costPrice: s.costPrice,
-            stock: s.stock || 0,
-            weight: s.weight,
+            retailPrice: Number(s.retailPrice || 0),
+            memberPrice: s.memberPrice == null || s.memberPrice === '' ? null : Number(s.memberPrice),
+            costPrice: s.costPrice == null || s.costPrice === '' ? null : Number(s.costPrice),
+            stock: Number(s.stock || 0),
+            weight: s.weight == null || s.weight === '' ? null : Number(s.weight),
             status: s.status ?? 1,
           }
 
+          let skuId: number
           if (matchedSku) {
-            await tx.sku.update({
-              where: { id: matchedSku.id },
-              data: skuData,
-            })
-            touchedIds.push(matchedSku.id)
+            await tx.sku.update({ where: { id: matchedSku.id }, data: skuData })
+            skuId = matchedSku.id
           } else {
-            const created = await tx.sku.create({
-              data: {
-                productId: id,
-                ...skuData,
-              },
+            const created = await tx.sku.create({ data: { productId: id, ...skuData } })
+            skuId = created.id
+          }
+          touchedIds.push(skuId)
+
+          // 同步默认仓 Stock（注意：不会动 reserved，避免覆盖正在占用中的订单）
+          await this.upsertStockForSku(tx, skuId, skuData.stock, warehouseId)
+
+          // 重写 PriceTier：先删再插（priceTiers 数量通常很少，简单就好）
+          await tx.priceTier.deleteMany({ where: { skuId } })
+          const tiers = normalizePriceTiers(s.priceTiers)
+          if (tiers.length) {
+            await tx.priceTier.createMany({
+              data: tiers.map((t) => ({ skuId, ...t })),
             })
-            touchedIds.push(created.id)
           }
         }
 
         if (existingSkus.length) {
           await tx.sku.updateMany({
-            where: {
-              productId: id,
-              id: { notIn: touchedIds.length ? touchedIds : [0] },
-            },
+            where: { productId: id, id: { notIn: touchedIds.length ? touchedIds : [0] } },
             data: { status: 0 },
           })
         }
       })
     } else {
-      await this.prisma.product.update({ where: { id }, data: rest })
+      await this.prisma.product.update({ where: { id }, data: productScalars })
     }
-    return this.findById(id)
+    return this.findById(id, 'admin')
   }
 
   async remove(id: number) {
-    // 软删：改为下架
     return this.prisma.product.update({
       where: { id },
       data: { status: 0 },
     })
   }
 
-  /** 上下架 */
   async toggleListing(id: number) {
-    const p = await this.findById(id)
+    const p = await this.findById(id, 'admin')
     return this.prisma.product.update({
       where: { id },
       data: { status: p.status === 1 ? 0 : 1 },
     })
   }
 
-  /** 零售开关 */
   async toggleRetail(id: number) {
-    const p = await this.findById(id)
+    const p = await this.findById(id, 'admin')
     return this.prisma.product.update({
       where: { id },
       data: { retailEnabled: !p.retailEnabled },
     })
   }
 
-  /** 批发开关 */
   async toggleWholesale(id: number) {
-    const p = await this.findById(id)
+    const p = await this.findById(id, 'admin')
     return this.prisma.product.update({
       where: { id },
       data: { wholesaleEnabled: !p.wholesaleEnabled },
     })
   }
 
-  /** 显式设置上下架状态（0/1） */
   async setStatus(id: number, status: number) {
-    await this.findById(id)
+    await this.findById(id, 'admin')
     return this.prisma.product.update({ where: { id }, data: { status } })
   }
 
-  /** 显式设置零售开关 */
   async setRetail(id: number, enabled: boolean) {
-    await this.findById(id)
+    await this.findById(id, 'admin')
     return this.prisma.product.update({ where: { id }, data: { retailEnabled: enabled } })
   }
 
-  /** 显式设置批发开关 */
   async setWholesale(id: number, enabled: boolean) {
-    await this.findById(id)
+    await this.findById(id, 'admin')
     return this.prisma.product.update({ where: { id }, data: { wholesaleEnabled: enabled } })
   }
 
-  /** 批量删除 */
   async batchRemove(ids: number[]) {
     return this.prisma.product.updateMany({
       where: { id: { in: ids } },

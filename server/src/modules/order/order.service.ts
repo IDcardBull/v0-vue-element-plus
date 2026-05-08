@@ -211,7 +211,24 @@ export class OrderService {
       // 4. 占用库存（reserved += qty）
       for (const it of input.items) {
         const stocks = await tx.stock.findMany({ where: { skuId: it.skuId } })
-        if (!stocks.length) throw new BadRequestException('库存记录缺失')
+        // 找不到 Stock 记录有两种情况：
+        //   a) 管理端没给该 SKU 在任何仓库建过库存条目
+        //   b) 前端传上来的 skuId 实际是 productId / 错误 id
+        // 这里把 sku 信息一起带上，便于排查
+        if (!stocks.length) {
+          const sku = await tx.sku.findUnique({
+            where: { id: it.skuId },
+            include: { product: { select: { name: true } } },
+          })
+          if (!sku) {
+            throw new BadRequestException(
+              `SKU ${it.skuId} 不存在，请确认前端是否误传了 productId`,
+            )
+          }
+          throw new BadRequestException(
+            `「${sku.product.name} / ${sku.skuCode}」(skuId=${sku.id}) 还未建立库存记录，请到管理端"库存管理"录入`,
+          )
+        }
         let remain = it.qty
         for (const s of stocks) {
           const available = s.onHand - s.reserved
@@ -224,7 +241,15 @@ export class OrderService {
           remain -= take
           if (remain === 0) break
         }
-        if (remain > 0) throw new BadRequestException('库存不足')
+        if (remain > 0) {
+          const sku = await tx.sku.findUnique({
+            where: { id: it.skuId },
+            include: { product: { select: { name: true } } },
+          })
+          throw new BadRequestException(
+            `「${sku?.product.name || ''} / ${sku?.skuCode || it.skuId}」库存不足`,
+          )
+        }
       }
 
       // 5. 扣授信（若适用）

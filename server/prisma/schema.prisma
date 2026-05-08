@@ -300,6 +300,10 @@ model Product {
   minWholesaleQty  Int     @default(1) @map("min_wholesale_qty")
   dealerLevels     Json?   @map("dealer_levels") // ['normal','silver','gold','diamond']
 
+  // 物流配置（结合用户地址做远近分区运费时再扩展为 ShippingTemplate）
+  freeShipping     Boolean @default(false) @map("free_shipping") // 是否包邮
+  shippingFee      Decimal @default(0)     @map("shipping_fee") @db.Decimal(10, 2) // 默认运费，freeShipping=true 时忽略
+
   // 共用
   salesCount       Int     @default(0) @map("sales_count") // 累计销量
   rating           Decimal @default(0) @db.Decimal(3, 2)

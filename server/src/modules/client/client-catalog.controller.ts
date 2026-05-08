@@ -91,17 +91,17 @@ export class ClientCatalogController {
     })
   }
 
-  /** 商品详情（含 SKU 列表） */
+  /** 商品详情（含 SKU 列表）。channel=wholesale 才返回阶梯价/批发字段，默认零售。 */
   @Public()
   @Get('products/:id')
-  productDetail(@Param('id', ParseIntPipe) id: number) {
-    return this.productSvc.findById(id)
+  productDetail(@Param('id', ParseIntPipe) id: number, @Query('channel') channel?: string) {
+    return this.productSvc.findById(id, channel === 'wholesale' ? 'wholesale' : 'retail')
   }
 
   /** 兼容小程序端路径：/client/product/:id */
   @Public()
   @Get('product/:id')
-  productDetailAlias(@Param('id', ParseIntPipe) id: number) {
-    return this.productSvc.findById(id)
+  productDetailAlias(@Param('id', ParseIntPipe) id: number, @Query('channel') channel?: string) {
+    return this.productSvc.findById(id, channel === 'wholesale' ? 'wholesale' : 'retail')
   }
 }
