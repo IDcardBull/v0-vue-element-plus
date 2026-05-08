@@ -18,6 +18,7 @@ const client_address_controller_1 = require("./client-address.controller");
 const client_address_service_1 = require("./client-address.service");
 const client_order_controller_1 = require("./client-order.controller");
 const client_pay_controller_1 = require("./client-pay.controller");
+const wechat_pay_notify_controller_1 = require("./wechat-pay-notify.controller");
 const wechat_pay_service_1 = require("./wechat-pay.service");
 /**
  * 小程序端业务聚合模块
@@ -36,6 +37,7 @@ exports.ClientModule = ClientModule = __decorate([
             client_order_controller_1.ClientOrderController,
             client_order_controller_1.ClientOrderCompatController,
             client_pay_controller_1.ClientPayController,
+            wechat_pay_notify_controller_1.WechatPayNotifyController,
         ],
         providers: [client_address_service_1.ClientAddressService, wechat_pay_service_1.WechatPayService],
     })

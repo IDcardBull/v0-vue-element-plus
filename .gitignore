@@ -6,7 +6,7 @@ __v0_jsx-dev-runtime.ts
 .v0-trash/
 .vercel/
 next.user-config.*
-
+certs/
 # Environment variables
 .env*.local
 

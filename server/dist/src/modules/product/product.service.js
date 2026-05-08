@@ -12,6 +12,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProductService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../common/prisma.service");
+function normalizeSkuImage(s) {
+    return s?.image || s?.skuImage || s?.sku_image || s?.imageUrl || s?.image_url || undefined;
+}
 let ProductService = class ProductService {
     constructor(prisma) {
         this.prisma = prisma;
@@ -125,7 +128,7 @@ let ProductService = class ProductService {
                         create: skus.map((s) => ({
                             code: s.code,
                             specs: s.specs || {},
-                            image: s.image,
+                            image: normalizeSkuImage(s),
                             retailPrice: s.retailPrice || 0,
                             memberPrice: s.memberPrice,
                             costPrice: s.costPrice,
@@ -154,7 +157,7 @@ let ProductService = class ProductService {
                     const skuData = {
                         code: s.code,
                         specs: s.specs || {},
-                        image: s.image,
+                        image: normalizeSkuImage(s),
                         retailPrice: s.retailPrice || 0,
                         memberPrice: s.memberPrice,
                         costPrice: s.costPrice,
