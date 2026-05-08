@@ -102,6 +102,53 @@ export class WorkWxService {
   }
 
   /**
+   * 新订单创建通知（用户刚下单，尚未付款）
+   * 与 sendOrderPaid 区分：
+   *   - 标题用 <font color="comment"> 弱提示，不抢"已付款"卡片的眼神
+   *   - 金额仍 warning 黄色，方便运营快速扫到
+   *   - 不发授信单（授信单走 sendCreditOrderCreated 模板）
+   */
+  async sendOrderCreated(order: {
+    orderNo: string
+    channel: string
+    totalAmount: number | string
+    payMethod?: string | null
+    receiver?: string | null
+    receiverPhone?: string | null
+    receiverAddress?: string | null
+    items: Array<{ productName: string; qty: number }>
+  }) {
+    if (!this.isEnabled()) return
+
+    const channelLabel = order.channel === 'wholesale' ? '批发' : '零售'
+    const itemsLines = order.items
+      .slice(0, 8)
+      .map((it) => `> ${it.productName} × ${it.qty}`)
+      .join('\n')
+    const moreLine =
+      order.items.length > 8 ? `> ……另有 ${order.items.length - 8} 项` : ''
+
+    const md = [
+      `**<font color="comment">新订单 / ${channelLabel}（待付款）</font>**`,
+      `订单号：${order.orderNo}`,
+      `金额：<font color="warning">¥${Number(order.totalAmount).toFixed(2)}</font>`,
+      `支付方式：${order.payMethod === 'wechat' ? '微信支付（待支付）' : order.payMethod || '-'}`,
+      order.receiver
+        ? `收货人：${order.receiver}${order.receiverPhone ? ' · ' + this.maskPhone(order.receiverPhone) : ''}`
+        : '',
+      order.receiverAddress ? `地址：${order.receiverAddress}` : '',
+      '',
+      '**商品明细：**',
+      itemsLines,
+      moreLine,
+    ]
+      .filter(Boolean)
+      .join('\n')
+
+    await this.sendMarkdown(md)
+  }
+
+  /**
    * 订单付款成功通知。
    * 给运营群发一条结构化 markdown，关键字加色：
    *   - 金额绿色，提醒尽快备货

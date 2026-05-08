@@ -414,15 +414,40 @@ export class OrderService {
       })
     })
 
-    // 授信下单（不走支付直接 pending_ship）触发企微通知；
-    // 现金下单走 markPaid → 在 markPaid 里通知，避免重复
+    // 三条通知互斥：授信单 → 授信卡片；普通单 → 「新订单待付款」卡片；
+    // 后续 markPaid 时再发「已付款」卡片。
     if (input.useCredit && user.distributor) {
       this.notifyCreditOrder(createdOrder, user, totalAmount).catch((err) =>
         this.logger.warn(`[Notify] sendCreditOrder 异常: ${err?.message || err}`),
       )
+    } else {
+      this.notifyOrderCreated(createdOrder).catch((err) =>
+        this.logger.warn(`[Notify] sendOrderCreated 异常: ${err?.message || err}`),
+      )
     }
 
     return createdOrder
+  }
+
+  /** 新订单创建后给运营群推送「待付款」卡片 */
+  private async notifyOrderCreated(createdOrder: any) {
+    if (!this.workWx.isEnabled()) return
+    const snap: any = createdOrder.receiverSnapshot || {}
+    await this.workWx.sendOrderCreated({
+      orderNo: createdOrder.orderNo,
+      channel: createdOrder.channel,
+      totalAmount: Number(createdOrder.totalAmount),
+      payMethod: createdOrder.payMethod,
+      receiver: snap.name || snap.contact || null,
+      receiverPhone: snap.phone || null,
+      receiverAddress: [snap.province, snap.city, snap.district, snap.detail]
+        .filter(Boolean)
+        .join(' ') || null,
+      items: (createdOrder.items || []).map((it: any) => ({
+        productName: it.productName,
+        qty: it.qty,
+      })),
+    })
   }
 
   /** 授信下单后给运营群播报：分销商名 / 订单金额 / 当前授信使用率 */
