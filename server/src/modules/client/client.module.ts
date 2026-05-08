@@ -10,6 +10,7 @@ import { ClientAddressController } from './client-address.controller'
 import { ClientAddressService } from './client-address.service'
 import { ClientOrderController, ClientOrderCompatController } from './client-order.controller'
 import { ClientPayController } from './client-pay.controller'
+import { WechatPayNotifyController } from './wechat-pay-notify.controller'
 import { WechatPayService } from './wechat-pay.service'
 
 /**
@@ -25,6 +26,7 @@ import { WechatPayService } from './wechat-pay.service'
     ClientOrderController,
     ClientOrderCompatController,
     ClientPayController,
+    WechatPayNotifyController,
   ],
   providers: [ClientAddressService, WechatPayService],
 })

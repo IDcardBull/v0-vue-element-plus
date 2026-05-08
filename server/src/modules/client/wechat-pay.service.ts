@@ -4,8 +4,10 @@ import {
   InternalServerErrorException,
   Logger,
   ServiceUnavailableException,
+  UnauthorizedException,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import axios from 'axios'
@@ -33,6 +35,7 @@ export class WechatPayService {
   private mchid?: string
   private notifyUrl?: string
   private apiV3Key?: string
+  private privateKeyPem?: Buffer
   private accessTokenCache?: { token: string; expiresAt: number }
 
   constructor(private readonly config: ConfigService) {
@@ -58,6 +61,7 @@ export class WechatPayService {
     try {
       const absPath = path.isAbsolute(keyPath) ? keyPath : path.resolve(process.cwd(), keyPath)
       const privateKey = fs.readFileSync(absPath)
+      this.privateKeyPem = privateKey
       this.pay = new WxPay({
         appid: this.appid,
         mchid: this.mchid,
@@ -71,6 +75,102 @@ export class WechatPayService {
     }
   }
 
+  /**
+   * 用商户私钥对待签名串做 SHA256-RSA-PKCS1v15，结果转 Base64。
+   * 这是 wx.requestPayment 的 paySign 算法，也是 V3 接口的通用签名算法。
+   */
+  private rsaSignBase64(message: string): string {
+    if (!this.privateKeyPem) {
+      throw new ServiceUnavailableException('微信支付未初始化，无法签名')
+    }
+    return crypto
+      .createSign('RSA-SHA256')
+      .update(message, 'utf8')
+      .sign(this.privateKeyPem)
+      .toString('base64')
+  }
+
+  /**
+   * 公开：JSAPI/小程序 统一下单（V3）
+   *
+   * 会把 description / openid / out_trade_no / amount / notify_url 提交到
+   *   POST https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi
+   * 拿到 prepay_id 后，本地按官方算法对
+   *   appId\n + timeStamp\n + nonceStr\n + package\n
+   * 做 SHA256-RSA 签名，返回前端 wx.requestPayment 直接可用的 5 个参数。
+   *
+   * @param orderNo     商户订单号（out_trade_no）
+   * @param amount      金额（元，小数即可，内部转分）
+   * @param openid      支付用户 openid（小程序登录时拿到）
+   * @param description 商品描述（≤127 字符）
+   */
+  async createJsApiOrder(
+    orderNo: string,
+    amount: number,
+    openid: string,
+    description: string,
+  ): Promise<{
+    timeStamp: string
+    nonceStr: string
+    package: string
+    signType: 'RSA'
+    paySign: string
+    prepayId: string
+  }> {
+    const pay = this.ensureReady()
+    if (!orderNo) throw new BadRequestException('orderNo 不能为空')
+    if (!openid) throw new BadRequestException('openid 不能为空')
+    const totalFen = Math.round(Number(amount) * 100)
+    if (!Number.isFinite(totalFen) || totalFen <= 0) {
+      throw new BadRequestException('支付金额必须大于 0')
+    }
+
+    // 1. 调用统一下单
+    const body: any = {
+      appid: this.appid,
+      mchid: this.mchid,
+      description: (description || orderNo).slice(0, 127),
+      out_trade_no: orderNo,
+      notify_url: this.notifyUrl,
+      amount: { total: totalFen, currency: 'CNY' },
+      payer: { openid },
+    }
+
+    let result: any
+    try {
+      result = await pay.transactions_jsapi(body)
+    } catch (err: any) {
+      this.logger.error(
+        `[WechatPay] transactions_jsapi 失败: ${err?.message}`,
+        err?.stack,
+      )
+      throw new InternalServerErrorException(err?.message || '微信下单失败')
+    }
+
+    if (!result?.prepay_id) {
+      this.logger.error('[WechatPay] 下单返回缺少 prepay_id: ' + JSON.stringify(result))
+      throw new InternalServerErrorException(
+        result?.message || result?.code || '微信下单失败',
+      )
+    }
+
+    // 2. 本地按官方算法生成 wx.requestPayment 5 个参数
+    const timeStamp = Math.floor(Date.now() / 1000).toString()
+    const nonceStr = crypto.randomBytes(16).toString('hex')
+    const pkg = `prepay_id=${result.prepay_id}`
+    const message = `${this.appid}\n${timeStamp}\n${nonceStr}\n${pkg}\n`
+    const paySign = this.rsaSignBase64(message)
+
+    return {
+      timeStamp,
+      nonceStr,
+      package: pkg,
+      signType: 'RSA',
+      paySign,
+      prepayId: result.prepay_id,
+    }
+  }
+
   private ensureReady(): WxPay {
     if (!this.pay) {
       throw new ServiceUnavailableException(
@@ -81,8 +181,8 @@ export class WechatPayService {
   }
 
   /**
-   * JSAPI/小程序 下单
-   * @returns 前端 wx.requestPayment 参数
+   * 兼容旧调用方：内部委托 createJsApiOrder。
+   * @returns 前端 wx.requestPayment 参数（不含 prepayId）
    */
   async jsapi(params: {
     openid: string
@@ -90,41 +190,15 @@ export class WechatPayService {
     amountYuan: number // 元，内部转分
     description: string
   }) {
-    const pay = this.ensureReady()
-    const totalFen = Math.round(params.amountYuan * 100)
-    if (totalFen <= 0) throw new BadRequestException('支付金额必须大于 0')
-
-    const body: any = {
-      appid: this.appid,
-      mchid: this.mchid,
-      description: params.description || params.orderNo,
-      out_trade_no: params.orderNo,
-      notify_url: this.notifyUrl,
-      amount: { total: totalFen, currency: 'CNY' },
-      payer: { openid: params.openid },
-    }
-
-    const result: any = await pay.transactions_jsapi(body)
-    if (!result?.prepay_id) {
-      this.logger.error('[WechatPay] 下单失败: ' + JSON.stringify(result))
-      throw new InternalServerErrorException(result?.message || '微信下单失败')
-    }
-
-    // 拼装前端 wx.requestPayment 所需参数（已带签名）
-    const timeStamp = Math.floor(Date.now() / 1000).toString()
-    const nonceStr = Math.random().toString(36).slice(2, 18)
-    const pkg = `prepay_id=${result.prepay_id}`
-    const paySign = (pay as any).sign(
-      `${this.appid}\n${timeStamp}\n${nonceStr}\n${pkg}\n`,
+    const r = await this.createJsApiOrder(
+      params.orderNo,
+      params.amountYuan,
+      params.openid,
+      params.description,
     )
-
-    return {
-      timeStamp,
-      nonceStr,
-      package: pkg,
-      signType: 'RSA',
-      paySign,
-    }
+    const { prepayId, ...rest } = r
+    void prepayId
+    return rest
   }
 
   private async getMiniProgramAccessToken() {
@@ -248,24 +322,135 @@ export class WechatPayService {
   }
 
   /**
-   * 校验并解密支付回调
-   * @param headers 原始请求头
-   * @param rawBody 未经解析的 body 字符串
+   * 校验并解密支付回调（不验签，仅老接口兼容）
+   * @deprecated 请改用 verifyAndDecryptNotify
    */
   decryptNotify(
     headers: Record<string, string | string[] | undefined>,
     rawBody: string,
-  ): {
-    out_trade_no: string
-    transaction_id: string
-    trade_state: string
-    amount: { total: number; payer_total: number }
-  } {
-    const pay = this.ensureReady()
-    const apiV3Key = this.apiV3Key!
+  ): WxPayNotifyResult {
+    void headers
+    return this.decryptResource(rawBody)
+  }
 
-    // 注意：需要提前通过 pay.get_certificates() 缓存平台证书用于验签
-    // 简化处理：这里只解密，不做完整验签（生产必须开启验签）
+  // -------------------- 平台证书缓存 --------------------
+
+  /** 平台证书缓存：serial_no -> public key PEM。10 分钟过期重拉 */
+  private platformCertCache?: { map: Map<string, string>; expiresAt: number }
+
+  /** 从微信侧拉平台证书（V3 SDK 内部已经解密 + 缓存），失败抛 503 */
+  private async loadPlatformCerts(): Promise<Map<string, string>> {
+    const now = Date.now()
+    if (
+      this.platformCertCache &&
+      this.platformCertCache.expiresAt > now &&
+      this.platformCertCache.map.size > 0
+    ) {
+      return this.platformCertCache.map
+    }
+    const pay = this.ensureReady()
+    let certs: any
+    try {
+      certs = await (pay as any).get_certificates(this.apiV3Key)
+    } catch (err: any) {
+      this.logger.error(
+        `[WechatPay] 获取平台证书失败: ${err?.message}`,
+        err?.stack,
+      )
+      throw new ServiceUnavailableException('微信平台证书加载失败')
+    }
+    // 不同 SDK 版本返回结构略有差异：可能是 { data: [{ serial_no, certificate }] }
+    // 也可能直接是数组；统一兼容
+    const list: any[] = Array.isArray(certs)
+      ? certs
+      : Array.isArray(certs?.data)
+        ? certs.data
+        : []
+    const map = new Map<string, string>()
+    for (const c of list) {
+      const serial = c.serial_no || c.serialNo
+      const pem =
+        c.certificate ||
+        c.encrypt_certificate?.certificate ||
+        c.publicKey ||
+        c.cert
+      if (serial && pem) map.set(String(serial), String(pem))
+    }
+    if (map.size === 0) {
+      throw new ServiceUnavailableException('平台证书列表为空')
+    }
+    this.platformCertCache = { map, expiresAt: now + 10 * 60 * 1000 }
+    return map
+  }
+
+  /**
+   * 完整验签 + 解密微信支付回调（推荐）
+   *
+   * 1) 从 headers 取 Wechatpay-Signature / Timestamp / Nonce / Serial
+   * 2) 用 serial 找到对应平台证书的公钥
+   * 3) 重组待签名串 timestamp\n + nonce\n + rawBody\n，对 signature 做 RSA-SHA256 验签
+   * 4) 验签通过后用 APIv3Key 对 resource.ciphertext 做 AES-256-GCM 解密
+   *
+   * @throws UnauthorizedException 验签失败
+   * @throws BadRequestException 头部缺失 / body 非法 / resource 缺失
+   */
+  async verifyAndDecryptNotify(
+    headers: Record<string, string | string[] | undefined>,
+    rawBody: string,
+  ): Promise<WxPayNotifyResult> {
+    this.ensureReady()
+    if (!rawBody) throw new BadRequestException('回调 rawBody 为空')
+
+    const get = (k: string) => {
+      const v = headers[k] ?? headers[k.toLowerCase()]
+      return Array.isArray(v) ? v[0] : v
+    }
+    const timestamp = get('Wechatpay-Timestamp')
+    const nonce = get('Wechatpay-Nonce')
+    const signature = get('Wechatpay-Signature')
+    const serial = get('Wechatpay-Serial')
+    if (!timestamp || !nonce || !signature || !serial) {
+      throw new BadRequestException(
+        '回调缺少 Wechatpay-Timestamp / Nonce / Signature / Serial 头',
+      )
+    }
+
+    // 防重放：微信要求 timestamp 与服务器时间偏差 ≤ 5 分钟
+    const ts = Number(timestamp)
+    if (Number.isFinite(ts) && Math.abs(Date.now() / 1000 - ts) > 300) {
+      throw new UnauthorizedException('回调时间戳偏差过大，疑似重放攻击')
+    }
+
+    // 1. 验签
+    const certs = await this.loadPlatformCerts()
+    const certPem = certs.get(String(serial))
+    if (!certPem) {
+      // 对应序列号的证书不在缓存里 -> 强制刷新一次再重试
+      this.platformCertCache = undefined
+      const refreshed = await this.loadPlatformCerts()
+      const retry = refreshed.get(String(serial))
+      if (!retry) {
+        throw new UnauthorizedException(
+          `未找到 Wechatpay-Serial=${serial} 对应的平台证书`,
+        )
+      }
+    }
+    const message = `${timestamp}\n${nonce}\n${rawBody}\n`
+    const ok = crypto
+      .createVerify('RSA-SHA256')
+      .update(message, 'utf8')
+      .verify(certs.get(String(serial))!, signature, 'base64')
+    if (!ok) {
+      throw new UnauthorizedException('微信回调签名校验失败')
+    }
+
+    // 2. 解密
+    return this.decryptResource(rawBody)
+  }
+
+  /** 公共：从 envelope.resource.ciphertext 还原明文 JSON */
+  private decryptResource(rawBody: string): WxPayNotifyResult {
+    const pay = this.ensureReady()
     let envelope: any
     try {
       envelope = JSON.parse(rawBody)
@@ -273,13 +458,14 @@ export class WechatPayService {
       throw new BadRequestException('回调 body 不是合法 JSON')
     }
     const { resource } = envelope || {}
-    if (!resource?.ciphertext) throw new BadRequestException('回调体缺少 resource')
+    if (!resource?.ciphertext)
+      throw new BadRequestException('回调体缺少 resource.ciphertext')
 
     const decrypted = (pay as any).decipher_gcm(
       resource.ciphertext,
       resource.associated_data,
       resource.nonce,
-      apiV3Key,
+      this.apiV3Key,
     )
     const data = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted
     return {
@@ -287,6 +473,15 @@ export class WechatPayService {
       transaction_id: data.transaction_id,
       trade_state: data.trade_state,
       amount: data.amount,
+      raw: data,
     }
   }
+}
+
+export interface WxPayNotifyResult {
+  out_trade_no: string
+  transaction_id: string
+  trade_state: string
+  amount: { total: number; payer_total: number }
+  raw?: any
 }
