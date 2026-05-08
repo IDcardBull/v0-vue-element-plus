@@ -212,12 +212,26 @@ export class ProductService {
     return { ...p, skus: (p.skus || []).map((s: any) => enrichSku(s)) }
   }
 
-  /** 取一个默认仓库 id：优先 isDefault=true，否则取最早建的那个 */
-  private async getDefaultWarehouseId(tx: any): Promise<number | null> {
+  /**
+   * 取默认仓库 id；优先 isDefault=true → 否则取最早的 status=1 → 都没有则
+   * 自动创建 WH-DEFAULT 兜底。这样保证商品编辑里的库存数字一定能落到 Stock 表，
+   * 不会因为没初始化仓库被静默丢弃（之前 db push --force-reset 没跑 seed 时
+   * 就会导致库存填了不写）。
+   */
+  private async getDefaultWarehouseId(tx: any): Promise<number> {
     const wh =
       (await tx.warehouse.findFirst({ where: { isDefault: true, status: 1 } })) ||
       (await tx.warehouse.findFirst({ where: { status: 1 }, orderBy: { id: 'asc' } }))
-    return wh?.id ?? null
+    if (wh?.id) return wh.id
+    const created = await tx.warehouse.create({
+      data: {
+        code: 'WH-DEFAULT',
+        name: '默认仓库',
+        isDefault: true,
+        status: 1,
+      },
+    })
+    return created.id
   }
 
   /** 给指定 SKU 在默认仓库 upsert 一条 Stock 记录 */
@@ -225,9 +239,8 @@ export class ProductService {
     tx: any,
     skuId: number,
     onHand: number,
-    warehouseId: number | null,
+    warehouseId: number,
   ) {
-    if (!warehouseId) return
     const safeOnHand = Math.max(Number(onHand) || 0, 0)
     await tx.stock.upsert({
       where: { skuId_warehouseId: { skuId, warehouseId } },

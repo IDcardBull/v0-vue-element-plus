@@ -27,7 +27,6 @@ interface SkuRow {
   sku_image: string
   retail_price: number | null
   wholesale_price: number | null
-  cost: number | null
   stock: number | null
   enabled: boolean
 }
@@ -196,7 +195,6 @@ function regenerateSkuMatrix() {
         sku_image: '',
         retail_price: 0,
         wholesale_price: form.market_price,
-        cost: null,
         stock: 0,
         enabled: true,
       }
@@ -389,7 +387,6 @@ function fillSkuList(skus: any[]) {
       sku_image: normalizeSkuImageUrl(sku),
       retail_price: Number(sku.retailPrice ?? form.retail_price ?? 0),
       wholesale_price: firstTier && firstTier.price != null ? Number(firstTier.price) : null,
-      cost: sku.costPrice === null || sku.costPrice === undefined ? null : Number(sku.costPrice),
       stock: Number(sku.stock ?? 0),
       enabled: sku.status !== 0,
     }
@@ -480,7 +477,7 @@ function buildProductPayload(status: 'on' | 'draft') {
     skus: skuList.value
       .filter((sku) => sku.enabled)
       .map((sku, index) => {
-        // 批发价 → 一档 priceTier；如果没启批发或没填批发价，priceTiers 留空数组（后端会清掉旧档）
+        // 批发价 → 一��� priceTier；如果没启批发或没填批发价，priceTiers 留空数组（后端会清掉旧档）
         const wp = sku.wholesale_price
         const priceTiers =
           wholesaleEnabled && wp !== null && wp !== undefined && Number(wp) >= 0
@@ -496,7 +493,6 @@ function buildProductPayload(status: 'on' | 'draft') {
           retailPrice: Number(sku.retail_price || form.retail_price || 0),
           // SKU 级别的会员价同步 form.market_price，避免和 product.memberPrice 不一致
           memberPrice: form.market_price === null ? null : Number(form.market_price),
-          costPrice: sku.cost === null ? null : Number(sku.cost),
           stock: Number(sku.stock || 0),
           weight: form.weight === null ? null : Number(form.weight),
           status: 1,
@@ -927,18 +923,6 @@ onMounted(async () => {
             <template #default="{ row }">
               <el-input-number
                 v-model="row.wholesale_price"
-                :min="0"
-                :precision="2"
-                :controls="false"
-                size="small"
-                style="width: 100%"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column label="成本价 (元)" width="150">
-            <template #default="{ row }">
-              <el-input-number
-                v-model="row.cost"
                 :min="0"
                 :precision="2"
                 :controls="false"
