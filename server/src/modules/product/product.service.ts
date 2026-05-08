@@ -82,16 +82,22 @@ export class ProductService {
       this.prisma.product.count({ where }),
     ])
 
-    // 实际可用库存 = sum(stocks.onHand - stocks.reserved)，按 product 聚合
+    // 实际可用库存 = sum(stocks.onHand - stocks.reserved)
+    // 同时按 product 维度（用于 totalStock）和 sku 维度（注入 sku.stock）双聚合
     const ids = list.map((p) => p.id)
     const stockRows = await this.prisma.stock.findMany({
       where: { sku: { productId: { in: ids } } },
       select: { skuId: true, onHand: true, reserved: true, sku: { select: { productId: true } } },
     })
-    const stockMap = new Map<number, number>()
+    const stockMap = new Map<number, number>() // productId -> available
+    const skuStockMap = new Map<number, { onHand: number; reserved: number }>() // skuId -> agg
     for (const r of stockRows) {
       const pid = r.sku.productId
       stockMap.set(pid, (stockMap.get(pid) || 0) + Math.max(r.onHand - r.reserved, 0))
+      const m = skuStockMap.get(r.skuId) || { onHand: 0, reserved: 0 }
+      m.onHand += r.onHand
+      m.reserved += r.reserved
+      skuStockMap.set(r.skuId, m)
     }
 
     // 批发列表才需要返回阶梯价聚合
@@ -116,8 +122,21 @@ export class ProductService {
     return {
       list: list.map((p) => {
         const tierAgg = tierAggMap.get(p.id)
+        // 给每个 SKU 注入聚合后的库存字段（与 findById 口径一致）
+        const skus = (p.skus || []).map((s: any) => {
+          const agg = skuStockMap.get(s.id) || { onHand: 0, reserved: 0 }
+          const available = Math.max(agg.onHand - agg.reserved, 0)
+          return {
+            ...s,
+            totalOnHand: agg.onHand,
+            totalReserved: agg.reserved,
+            availableQty: available,
+            stock: available,
+          }
+        })
         return {
           ...p,
+          skus,
           skuCount: p._count.skus,
           totalStock: stockMap.get(p.id) || 0,
           priceTierCount: tierAgg?.count || 0,
