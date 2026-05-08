@@ -4,6 +4,8 @@ import { PageResult } from '@/common/dto/pagination.dto'
 import { PriceTierService } from '../price-tier/price-tier.service'
 import { InventoryService } from '../inventory/inventory.service'
 import { WechatPayService } from '../client/wechat-pay.service'
+import { Kuaidi100Service } from '../logistics/kuaidi100.service'
+import { WorkWxService } from '../notify/work-wx.service'
 
 export type OrderStatus =
   | 'pending_pay'
@@ -29,6 +31,8 @@ export class OrderService {
     private readonly priceTier: PriceTierService,
     private readonly inventory: InventoryService,
     private readonly wechatPay: WechatPayService,
+    private readonly kuaidi100: Kuaidi100Service,
+    private readonly workWx: WorkWxService,
   ) {}
 
   // -------------------- 查询 --------------------
@@ -87,10 +91,94 @@ export class OrderService {
 
   async getLogistics(orderId: bigint | number) {
     const order = await this.findById(orderId)
+    if (!order.logisticsCompany || !order.trackingNo) {
+      return {
+        supported: false,
+        message: '订单暂未发货，无物流单号',
+        company: order.logisticsCompany || '',
+        trackingNo: order.trackingNo || '',
+        traces: [],
+      }
+    }
+
+    // 优先调快递100，未配置时回退到 wechatPay 老逻辑（即返回'未接入'占位）
+    if (this.kuaidi100.isEnabled()) {
+      try {
+        // 收件人手机号尾 4 位（顺丰系必填，其他快递可选）。
+        // receiverSnapshot 是下单时快照，比 user.address 更准
+        const recv = (order.receiverSnapshot as any) || {}
+        const phone = (recv.phone || '').toString().slice(-4)
+
+        const traces = await this.kuaidi100.queryTrack({
+          com: this.normalizeCarrierCode(order.logisticsCompany),
+          num: order.trackingNo,
+          phone,
+        })
+
+        return {
+          supported: true,
+          source: 'kuaidi100',
+          message: 'ok',
+          company: order.logisticsCompany,
+          trackingNo: order.trackingNo,
+          traces,
+        }
+      } catch (err: any) {
+        this.logger.warn(`[Logistics] 快递100查询失败: ${err?.message || err}`)
+        return {
+          supported: false,
+          source: 'kuaidi100',
+          message: err?.message || '物流查询失败',
+          company: order.logisticsCompany,
+          trackingNo: order.trackingNo,
+          traces: [],
+        }
+      }
+    }
+
     return this.wechatPay.queryLogistics({
       logisticsCompany: order.logisticsCompany,
       trackingNo: order.trackingNo,
     })
+  }
+
+  /**
+   * 把后台用户输入的中文/拼音公司名映射到快递100 标准 com 编码。
+   * 后台填'顺丰' / 'shunfeng' / 'SF' 都能识别。未识别时按小写返回（KD100 也接受常见英文）
+   */
+  private normalizeCarrierCode(input: string): string {
+    const raw = (input || '').trim().toLowerCase()
+    if (!raw) return raw
+    const map: Record<string, string> = {
+      顺丰: 'shunfeng',
+      顺丰速运: 'shunfeng',
+      sf: 'shunfeng',
+      sf速运: 'shunfeng',
+      圆通: 'yuantong',
+      圆通速递: 'yuantong',
+      yt: 'yuantong',
+      中通: 'zhongtong',
+      中通快递: 'zhongtong',
+      zt: 'zhongtong',
+      申通: 'shentong',
+      申通快递: 'shentong',
+      韵达: 'yunda',
+      韵达快递: 'yunda',
+      京东: 'jd',
+      京东物流: 'jd',
+      邮政: 'youzhengguonei',
+      邮政快递包裹: 'youzhengguonei',
+      ems: 'ems',
+      德邦: 'debangkuaidi',
+      德邦快递: 'debangkuaidi',
+      德邦物流: 'debangwuliu',
+      百世: 'huitongkuaidi',
+      百世快递: 'huitongkuaidi',
+      极兔: 'jtexpress',
+      极兔速递: 'jtexpress',
+      jt: 'jtexpress',
+    }
+    return map[raw] || raw
   }
 
   async updateAddress(orderId: bigint | number, userId: number, addressId: number) {
@@ -220,7 +308,7 @@ export class OrderService {
 
     const orderNo = `${input.channel === 'wholesale' ? 'WS' : 'RT'}${Date.now()}${Math.floor(Math.random() * 1000)}`
 
-    return this.prisma.$transaction(async (tx) => {
+    const createdOrder = await this.prisma.$transaction(async (tx) => {
       // 4. 占用库存（reserved += qty）
       for (const it of input.items) {
         const stocks = await tx.stock.findMany({ where: { skuId: it.skuId } })
@@ -299,13 +387,49 @@ export class OrderService {
         include: { items: true },
       })
     })
+
+    // 授信下单（不走支付直接 pending_ship）触发企微通知；
+    // 现金下单走 markPaid → 在 markPaid 里通知，避免重复
+    if (input.useCredit && user.distributor) {
+      this.notifyCreditOrder(createdOrder, user, totalAmount).catch((err) =>
+        this.logger.warn(`[Notify] sendCreditOrder 异常: ${err?.message || err}`),
+      )
+    }
+
+    return createdOrder
+  }
+
+  /** 授信下单后给运营群播报：分销商名 / 订单金额 / 当前授信使用率 */
+  private async notifyCreditOrder(
+    createdOrder: any,
+    user: any,
+    totalAmount: number,
+  ) {
+    if (!this.workWx.isEnabled()) return
+    // 重新拉一次 distributor 拿最新已用额度（事务内 increment 后的值）
+    const dist = await this.prisma.distributor.findUnique({
+      where: { id: user.distributor.id },
+    })
+    if (!dist) return
+
+    await this.workWx.sendCreditOrderCreated({
+      orderNo: createdOrder.orderNo,
+      distributorName: dist.companyName || user.nickname || user.phone,
+      totalAmount,
+      creditUsed: Number(dist.creditUsed),
+      creditLimit: Number(dist.creditLimit),
+      items: (createdOrder.items || []).map((it: any) => ({
+        productName: it.productName,
+        qty: it.qty,
+      })),
+    })
   }
 
   // -------------------- 状态机 --------------------
   async markPaid(orderId: bigint | number, payTransId?: string) {
     const order = await this.findById(orderId)
     if (order.status !== 'pending_pay') throw new BadRequestException('订单状态不允许支付')
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: BigInt(orderId) },
       data: {
         status: 'pending_ship',
@@ -313,6 +437,44 @@ export class OrderService {
         paidAmount: order.totalAmount,
         payTransId,
       },
+    })
+
+    // 异步推企业微信群（失败仅 warn，不阻塞主链路；不 await，订单接口立即返回）
+    this.notifyOrderPaid(order).catch((err) =>
+      this.logger.warn(`[Notify] sendOrderPaid 异常: ${err?.message || err}`),
+    )
+
+    return updated
+  }
+
+  /**
+   * 组装订单付款企微通知。
+   * order 来自 findById，已 include user/address/items
+   */
+  private async notifyOrderPaid(order: any) {
+    if (!this.workWx.isEnabled()) return
+    const recv = (order.receiverSnapshot as any) || order.address || {}
+    const receiverAddress = [
+      recv.province,
+      recv.city,
+      recv.district,
+      recv.detail,
+    ]
+      .filter(Boolean)
+      .join(' ')
+
+    await this.workWx.sendOrderPaid({
+      orderNo: order.orderNo,
+      channel: order.channel,
+      totalAmount: Number(order.totalAmount),
+      payMethod: order.payMethod,
+      receiver: recv.receiver || null,
+      receiverPhone: recv.phone || null,
+      receiverAddress: receiverAddress || null,
+      items: (order.items || []).map((it: any) => ({
+        productName: it.productName,
+        qty: it.qty,
+      })),
     })
   }
 
@@ -416,6 +578,29 @@ export class OrderService {
         })
     }
 
+    // 注册快递100 订阅推送：以后每次轨迹更新 KD100 都会主动 POST 我们 webhook
+    // 失败仅 warn，不阻塞发货流程；用户首次进物流页时仍可现场查询
+    if (this.kuaidi100.isEnabled()) {
+      const recv = (shippedOrder.receiverSnapshot as any) || shippedOrder.address || {}
+      const phone = (recv.phone || '').toString().slice(-4)
+      this.kuaidi100
+        .subscribeTrack({
+          com: this.normalizeCarrierCode(company),
+          num: trackingNo,
+          phone,
+        })
+        .then((res) => {
+          if (res?.result === false || res?.returnCode !== '200') {
+            this.logger.warn(
+              `[Kuaidi100] subscribe 提示 returnCode=${res?.returnCode} message=${res?.message}`,
+            )
+          }
+        })
+        .catch((err) =>
+          this.logger.warn(`[Kuaidi100] subscribeTrack 异常: ${err?.message || err}`),
+        )
+    }
+
     return shippedOrder
   }
 
@@ -464,6 +649,79 @@ export class OrderService {
         data: { status: 'closed', closedAt: new Date(), remark: reason },
       })
     })
+  }
+
+  /**
+   * 处理快递100 订阅推送：根据 trackingNo 找订单 → 终态时推企微 + 自动 complete
+   * webhook controller 调用，永远不抛异常（KD100 webhook 必须固定 ACK 否则会重试）
+   */
+  async applyKuaidi100Push(payload: {
+    state?: string // KD100 业务状态码：3=签收 4=退签 7=拒签 ...
+    company?: string
+    trackingNo?: string
+    lastContext?: string
+  }): Promise<void> {
+    const { trackingNo, state, company, lastContext } = payload
+    if (!trackingNo) return
+
+    const order = await this.prisma.order.findFirst({
+      where: { trackingNo },
+      orderBy: { id: 'desc' }, // 同一单号只会有一笔，但按时间倒序更稳
+    })
+    if (!order) {
+      this.logger.warn(
+        `[Kuaidi100][Push] 找不到 trackingNo=${trackingNo} 对应的订单，可能已删除`,
+      )
+      return
+    }
+
+    // 终态映射 → 推企微 + 触发后续动作
+    if (state === '3') {
+      // 已签收：推企微 + 自动 complete（如果当前是 shipped）
+      this.workWx
+        .sendLogisticsTerminal({
+          orderNo: order.orderNo,
+          company: company || order.logisticsCompany || '',
+          trackingNo,
+          state: 'signed',
+          lastContext,
+        })
+        .catch((err) => this.logger.warn(`[Notify] sendLogisticsTerminal 异常: ${err?.message || err}`))
+
+      if (order.status === 'shipped') {
+        try {
+          await this.complete(order.id)
+          this.logger.log(`[Kuaidi100][Push] 订单 ${order.orderNo} 自动确认收货`)
+        } catch (err: any) {
+          this.logger.warn(
+            `[Kuaidi100][Push] 自动 complete 失败: ${err?.message || err}`,
+          )
+        }
+      }
+    } else if (state === '4' || state === '7') {
+      // 退签 / 拒签
+      this.workWx
+        .sendLogisticsTerminal({
+          orderNo: order.orderNo,
+          company: company || order.logisticsCompany || '',
+          trackingNo,
+          state: state === '4' ? 'returned' : 'rejected',
+          lastContext,
+        })
+        .catch((err) => this.logger.warn(`[Notify] sendLogisticsTerminal 异常: ${err?.message || err}`))
+    } else if (state === '2') {
+      // 疑难件
+      this.workWx
+        .sendLogisticsTerminal({
+          orderNo: order.orderNo,
+          company: company || order.logisticsCompany || '',
+          trackingNo,
+          state: 'problem',
+          lastContext,
+        })
+        .catch((err) => this.logger.warn(`[Notify] sendLogisticsTerminal 异常: ${err?.message || err}`))
+    }
+    // 其他在途状态（0 在途 / 1 揽件 / 5 同城派送 ...）只记日志，不打扰运营
   }
 
   /** 退款：置为售后状态，并把金额/原因写入备注 */

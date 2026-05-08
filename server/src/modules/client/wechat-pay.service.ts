@@ -79,6 +79,17 @@ export class WechatPayService {
     this.appidMap.wholesale = this.config.get<string>('WX_APPID_WHOLESALE')
     this.secretMap.wholesale = this.config.get<string>('WX_SECRET_WHOLESALE')
 
+    // 启动日志：把生效的 AppID 完整打出来（10 位 hash 仍然可以骗自己；这里展示完整
+    // AppID 是公开信息，与 secret 不同）。这样登录失败时能直接拿这条对照
+    // miniprogram/project.config.json 里的 appid。
+    this.logger.log(
+      `[WechatPay] 生效 AppID — retail=${this.appidMap.retail || '(未配)'}` +
+        `  wholesale=${this.appidMap.wholesale || '(未配)'}`,
+    )
+    if (this.appidMap.retail && !this.secretMap.retail) {
+      this.logger.warn('[WechatPay] retail 端 WX_SECRET 未配置，jscode2session 必然失败')
+    }
+
     this.mchid = this.config.get<string>('WX_PAY_MCHID')
     this.notifyUrl = this.config.get<string>('WX_PAY_NOTIFY_URL')
     this.apiV3Key = this.config.get<string>('WX_PAY_API_V3_KEY')
@@ -201,7 +212,7 @@ export class WechatPayService {
    * @param orderNo     商户订单号（out_trade_no）
    * @param amount      金额（元，小数即可，内部转分）
    * @param openid      支付用户 openid（小程序登录时拿到）
-   * @param description ��品描述（≤127 字符）
+   * @param description ����品描述（≤127 字符）
    */
   async createJsApiOrder(
     orderNo: string,

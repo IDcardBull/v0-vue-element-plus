@@ -21,6 +21,7 @@ import { ClientModule } from './modules/client/client.module'
 import { UploadModule } from './modules/upload/upload.module'
 import { DictModule } from './modules/dict/dict.module'
 import { LogisticsModule } from './modules/logistics/logistics.module'
+import { NotifyModule } from './modules/notify/notify.module'
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { LogisticsModule } from './modules/logistics/logistics.module'
     UploadModule,
     DictModule,
     LogisticsModule,
+    NotifyModule,
   ],
   providers: [
     // 默认所有路由需要 JWT；接口上用 @Public() 放行

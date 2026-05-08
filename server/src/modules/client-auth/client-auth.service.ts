@@ -39,7 +39,19 @@ export class ClientAuthService {
       const { data } = await axios.get(url, { timeout: 5000 })
       if (data.errcode) {
         if (devFallbackEnabled) return this.devMiniLogin(`wechat-${data.errcode}`, channel)
-        throw new UnauthorizedException(`微信登录失败：${data.errmsg}`)
+        // 把后端实际在用的 appid 暴露出来，前端 toast 直接告诉用户两边对照
+        // 40029 invalid code = 客户端 AppID 与后端 jscode2session 用的 AppID 不一致
+        // 40125 invalid appsecret = AppSecret 配错
+        // 45011 = 同一 code 被换了多次（频率限制）
+        const hint =
+          data.errcode === 40029
+            ? `\n  → 后端用的 AppID=${appid} 与小程序客户端 AppID 不匹配，请核对 server/.env 的 WX_APPID${channel === 'wholesale' ? '_WHOLESALE' : '_RETAIL'}（或 WX_APPID）和 miniprogram/project.config.json 里的 appid 是否一致`
+            : data.errcode === 40125
+            ? `\n  → AppSecret 配错，请去微信公众平台 → 开发 → 开发设置 重置 secret 后更新 server/.env 的 WX_SECRET`
+            : data.errcode === 45011
+            ? `\n  → 频率超限或 code 被复用，1 分钟后重试；前端确保 wx.login 拿到的 code 只调一次后端`
+            : ''
+        throw new UnauthorizedException(`微信登录失败：${data.errmsg}${hint}`)
       }
 
       const { openid, unionid } = data
