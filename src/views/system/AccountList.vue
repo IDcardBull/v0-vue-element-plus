@@ -74,7 +74,7 @@
         <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="warning" @click="handleReset2FA(row)">重置密码</el-button>
+            <el-button link type="warning" @click="handleResetPassword(row)">重置密码</el-button>
             <el-button
               link
               :type="row.status === 'active' ? 'danger' : 'success'"
@@ -101,6 +101,27 @@
         </el-form-item>
         <el-form-item label="邮箱">
           <el-input v-model="form.email" />
+        </el-form-item>
+        <!-- 密码：仅新增时显示。编辑时若需改密走"重置密码"入口，更显式 -->
+        <el-form-item v-if="mode === 'create'" label="登录密码" prop="password">
+          <el-input
+            v-model="form.password"
+            type="password"
+            placeholder="至少 8 位，含字母和数字"
+            show-password
+            autocomplete="new-password"
+            maxlength="32"
+          />
+        </el-form-item>
+        <el-form-item v-if="mode === 'create'" label="确认密码" prop="confirmPassword">
+          <el-input
+            v-model="form.confirmPassword"
+            type="password"
+            placeholder="再次输入登录密码"
+            show-password
+            autocomplete="new-password"
+            maxlength="32"
+          />
         </el-form-item>
         <el-form-item label="所属部门">
           <el-select v-model="form.dept" style="width: 100%">
@@ -249,24 +270,61 @@ const form = reactive({
   dept: '',
   roleId: null as number | null,
   password: '',
+  confirmPassword: '',
   status: 'active' as 'active' | 'inactive',
 })
 
+// 密码强度：8-32 位，至少含字母 + 数字（不强制特殊字符，避免运营吐槽）
+const STRONG_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]{8,32}$/
+
 const rules: FormRules = {
-  username: [{ required: true, message: '请输入登录账号', trigger: 'blur' }],
+  username: [
+    { required: true, message: '请输入登录账号', trigger: 'blur' },
+    { pattern: /^[A-Za-z0-9_]{4,20}$/u, message: '4-20 位字母/数字/下划线', trigger: 'blur' },
+  ],
   realName: [{ required: true, message: '请输入真实姓名', trigger: 'blur' }],
-  phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }],
+  phone: [
+    { required: true, message: '请输入手机号', trigger: 'blur' },
+    { pattern: /^1[3-9]\d{9}$/u, message: '请输入正确的 11 位手机号', trigger: 'blur' },
+  ],
   roleId: [{ required: true, message: '请选择角色', trigger: 'change' }],
+  // 密码字段：编辑模式下不渲染对应输入框，所以即便 required 也不会触发
+  password: [
+    { required: true, message: '请输入登录密码', trigger: 'blur' },
+    {
+      validator: (_rule, val: string, cb) => {
+        if (mode.value !== 'create') return cb()
+        if (!val) return cb(new Error('请输入登录密码'))
+        if (!STRONG_PASSWORD.test(val)) {
+          return cb(new Error('密码 8-32 位且必须同时包含字母和数字'))
+        }
+        cb()
+      },
+      trigger: 'blur',
+    },
+  ],
+  confirmPassword: [
+    {
+      validator: (_rule, val: string, cb) => {
+        if (mode.value !== 'create') return cb()
+        if (!val) return cb(new Error('请再次输入登录密码'))
+        if (val !== form.password) return cb(new Error('两次输入的密码不一致'))
+        cb()
+      },
+      trigger: 'blur',
+    },
+  ],
 }
 
 function handleCreate() {
   mode.value = 'create'
   Object.assign(form, {
     id: 0, username: '', realName: '', phone: '', email: '', dept: '运营中心',
-    roleId: null, password: '',
+    roleId: null, password: '', confirmPassword: '',
     status: 'active',
   })
-  formRef.value?.resetFields()
+  // resetFields 必须在 v-model 已绑定值之后调，nextTick 保险
+  setTimeout(() => formRef.value?.resetFields(), 0)
   dialogVisible.value = true
 }
 
@@ -281,9 +339,10 @@ function handleEdit(row: Account) {
     dept: row.dept,
     roleId: row.roleId,
     password: '',
+    confirmPassword: '',
     status: row.status,
   })
-  formRef.value?.resetFields()
+  setTimeout(() => formRef.value?.resetFields(), 0)
   dialogVisible.value = true
 }
 
@@ -298,17 +357,35 @@ async function handleToggle(row: Account) {
   }
 }
 
-function handleReset2FA(row: Account) {
-  ElMessageBox.confirm(`确定重置账号「${row.username}」的登录密码为 123456？`, '重置确认', {
-    type: 'warning',
-  }).then(async () => {
-    try {
-      await accountApi.resetPassword(row.id)
-      ElMessage.success('密码已重置为 123456')
-    } catch (error: any) {
-      ElMessage.error(error?.message || '重置失败')
-    }
-  }).catch(() => {})
+async function handleResetPassword(row: Account) {
+  // 弹出输入框让管理员填新密码；不填则不允许提交（不再回退到默认 123456）
+  let newPwd = ''
+  try {
+    const res = await ElMessageBox.prompt(
+      `请为账号「${row.username}」设置新的登录密码：`,
+      '重置密码',
+      {
+        confirmButtonText: '确认重置',
+        cancelButtonText: '取消',
+        inputType: 'password',
+        inputPlaceholder: '8-32 位，必须同时包含字母和数字',
+        inputValidator: (val: string) => {
+          if (!val) return '请输入新密码'
+          if (!STRONG_PASSWORD.test(val)) return '密码 8-32 位且必须同时包含字母和数字'
+          return true
+        },
+      },
+    )
+    newPwd = res.value
+  } catch {
+    return // 用户取消
+  }
+  try {
+    await accountApi.resetPassword(row.id, newPwd)
+    ElMessage.success(`已为「${row.username}」重置密码`)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '重置失败')
+  }
 }
 
 async function handleSubmit() {

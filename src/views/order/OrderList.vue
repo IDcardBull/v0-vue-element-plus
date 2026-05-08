@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch, h, resolveComponent } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { orderApi } from '@/api/order'
@@ -332,75 +332,68 @@ function resetFilters() {
   loadOrders()
 }
 
-async function handleShip(order: Order) {
-  const form = reactive({
-    logisticsCompany: '顺丰速运',
-    logisticsNo: '',
-  })
-  const ElSelect = resolveComponent('el-select')
-  const ElOption = resolveComponent('el-option')
-  const ElInput = resolveComponent('el-input')
-
-  try {
-    await ElMessageBox({
-      title: `订单发货：${order.order_no}`,
-      message: h('div', { class: 'ship-form' }, [
-        h('div', { class: 'ship-form-item' }, [
-          h('div', { class: 'ship-form-label' }, '物流公司'),
-          h(ElSelect as any, {
-            modelValue: form.logisticsCompany,
-            'onUpdate:modelValue': (value: string) => {
-              form.logisticsCompany = value
-            },
-            placeholder: '请选择物流公司',
-            style: 'width: 100%',
-          }, () => logisticsCompanyOptions.map((item) => h(ElOption as any, {
-            label: item.label,
-            value: item.value,
-          }))),
-        ]),
-        h('div', { class: 'ship-form-item' }, [
-          h('div', { class: 'ship-form-label' }, '物流单号'),
-          h(ElInput as any, {
-            modelValue: form.logisticsNo,
-            'onUpdate:modelValue': (value: string) => {
-              form.logisticsNo = value
-            },
-            placeholder: '请输入物流单号',
-            clearable: true,
-          }),
-        ]),
-      ]),
-      confirmButtonText: '确认发货',
-      cancelButtonText: '取消',
-      beforeClose: async (action, _instance, done) => {
-        if (action !== 'confirm') {
-          done()
-          return
-        }
-        if (!form.logisticsCompany) {
-          ElMessage.warning('请选择物流公司')
-          return
-        }
-        if (!/^[A-Za-z0-9]{6,}$/u.test(form.logisticsNo)) {
-          ElMessage.warning('请输入有效物流单号')
-          return
-        }
-        try {
-          await orderApi.ship(Number(order.id), {
-            logisticsCompany: form.logisticsCompany,
-            logisticsNo: form.logisticsNo,
-          })
-          await loadOrders()
-          ElMessage.success('已发货')
-          done()
-        } catch (error: any) {
-          ElMessage.error(error?.message || '发货失败')
-        }
+// ─── 发货弹窗 ─────────────────────────────────────────
+// 之前用 ElMessageBox + h(ElInput, ...) 的写法，但 ElMessageBox 渲染的内容不在
+// 当前组件子树，resolveComponent 拿不到正确实例，导致用户截图里"输入框无法输入"。
+// 改成 reactive 状态 + 模板内的 <el-dialog>，按钮用普通 <el-input>/<el-select>。
+const shipVisible = ref(false)
+const shipSubmitting = ref(false)
+const shipForm = reactive({
+  orderId: 0 as number,
+  orderNo: '',
+  logisticsCompany: '顺丰速运',
+  logisticsNo: '',
+})
+const shipFormRef = ref<any>(null)
+const shipRules = {
+  logisticsCompany: [{ required: true, message: '请选择物流公司', trigger: 'change' }],
+  logisticsNo: [
+    { required: true, message: '请输入物流单号', trigger: 'blur' },
+    {
+      validator: (_rule: unknown, val: string, cb: (e?: Error) => void) => {
+        if (!val) return cb()
+        if (!/^[A-Za-z0-9-]{6,30}$/u.test(val.trim())) return cb(new Error('单号 6-30 位字母/数字'))
+        cb()
       },
-    })
+      trigger: 'blur',
+    },
+  ],
+}
+
+function handleShip(order: Order) {
+  shipForm.orderId = Number(order.id)
+  shipForm.orderNo = order.order_no
+  shipForm.logisticsCompany = '顺丰速运'
+  shipForm.logisticsNo = ''
+  shipVisible.value = true
+  // 等 dialog 渲染完再 clearValidate，避免上次的红字残留
+  setTimeout(() => shipFormRef.value?.clearValidate?.(), 50)
+}
+
+async function submitShip() {
+  // 先做手动校验，element-plus 的 validate 不抛会进 catch
+  let valid = false
+  try {
+    await shipFormRef.value?.validate?.()
+    valid = true
   } catch {
-    // 用户取消
+    valid = false
+  }
+  if (!valid) return
+
+  shipSubmitting.value = true
+  try {
+    await orderApi.ship(shipForm.orderId, {
+      logisticsCompany: shipForm.logisticsCompany,
+      logisticsNo: shipForm.logisticsNo.trim(),
+    })
+    ElMessage.success('已发货，物流轨迹将自动同步')
+    shipVisible.value = false
+    await loadOrders()
+  } catch (error: any) {
+    ElMessage.error(error?.message || '发货失败')
+  } finally {
+    shipSubmitting.value = false
   }
 }
 
@@ -792,6 +785,59 @@ function exportData() {
       </div>
     </el-card>
 
+    <!-- 发货弹窗：填快递公司 + 物流单号 → 触发后端订阅快递100 -->
+    <el-dialog
+      v-model="shipVisible"
+      :title="shipForm.orderNo ? `订单发货：${shipForm.orderNo}` : '订单发货'"
+      width="520px"
+      :close-on-click-modal="false"
+      append-to-body
+    >
+      <el-form
+        ref="shipFormRef"
+        :model="shipForm"
+        :rules="shipRules"
+        label-width="96px"
+        label-position="right"
+      >
+        <el-form-item label="物流公司" prop="logisticsCompany">
+          <el-select
+            v-model="shipForm.logisticsCompany"
+            placeholder="请选择物流公司"
+            filterable
+            allow-create
+            default-first-option
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in logisticsCompanyOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="物流单号" prop="logisticsNo">
+          <el-input
+            v-model="shipForm.logisticsNo"
+            placeholder="请输入快递单号（6-30 位）"
+            clearable
+            maxlength="30"
+            @keyup.enter="submitShip"
+          />
+        </el-form-item>
+        <div class="ship-tip">
+          发货后小程序会推送订阅消息提醒买家；快递100 将自动同步轨迹直至签收
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="shipVisible = false">取消</el-button>
+        <el-button type="primary" :loading="shipSubmitting" @click="submitShip">
+          确认发货
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="logisticsVisible" title="物流信息" width="520px">
       <div v-loading="logisticsLoading" class="logistics-panel">
         <el-descriptions :column="1" border>
@@ -921,19 +967,14 @@ function exportData() {
   align-items: center;
   gap: 12px;
 }
-.ship-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.ship-form-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.ship-form-label {
-  font-size: 13px;
+.ship-tip {
+  margin-top: 4px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
   color: #606266;
+  background: #f6f7fa;
+  border-radius: 6px;
 }
 .logistics-panel {
   min-height: 180px;
