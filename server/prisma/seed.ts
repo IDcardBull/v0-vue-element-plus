@@ -204,7 +204,6 @@ async function main() {
       retailPrice: 398,
       memberPrice: 358,
       costPrice: 180,
-      stock: 156,
       weight: 2.5,
     },
   })
@@ -217,7 +216,6 @@ async function main() {
       retailPrice: 458,
       memberPrice: 418,
       costPrice: 210,
-      stock: 68,
       weight: 3.0,
     },
   })
@@ -269,7 +267,6 @@ async function main() {
       retailPrice: 1299,
       memberPrice: 1099,
       costPrice: 580,
-      stock: 8,
       weight: 3.5,
     },
   })
@@ -308,7 +305,6 @@ async function main() {
       image: '/placeholder.svg',
       retailPrice: 288,
       memberPrice: 258,
-      stock: 386,
       weight: 0.3,
     },
   })

@@ -134,6 +134,7 @@ export class ProductService {
   /**
    * 商品详情。
    * channel='retail' 时不返回 priceTiers / 批发字段，避免污染零售端。
+   * 所有 channel 都会把每个 SKU 的可用库存（Stock 表聚合）注入到 sku.stock。
    */
   async findById(id: number, channel?: 'retail' | 'wholesale' | 'admin') {
     const p = await this.prisma.product.findUnique({
@@ -149,21 +150,47 @@ export class ProductService {
     })
     if (!p) throw new NotFoundException('商品不存在')
 
+    // 计算 SKU 库存聚合：可用 = sum(onHand) - sum(reserved)
+    const skuIds = (p.skus || []).map((s) => s.id)
+    const stockRows = skuIds.length
+      ? await this.prisma.stock.findMany({
+          where: { skuId: { in: skuIds } },
+          select: { skuId: true, onHand: true, reserved: true },
+        })
+      : []
+    const stockMap = new Map<number, { onHand: number; reserved: number }>()
+    for (const r of stockRows) {
+      const m = stockMap.get(r.skuId) || { onHand: 0, reserved: 0 }
+      m.onHand += r.onHand
+      m.reserved += r.reserved
+      stockMap.set(r.skuId, m)
+    }
+    const enrichSku = (s: any) => {
+      const agg = stockMap.get(s.id) || { onHand: 0, reserved: 0 }
+      const available = Math.max(agg.onHand - agg.reserved, 0)
+      return {
+        ...s,
+        totalOnHand: agg.onHand,
+        totalReserved: agg.reserved,
+        availableQty: available,
+        // 前端兼容字段：sku.stock = 可用库存
+        stock: available,
+      }
+    }
+
     if (channel === 'retail') {
-      // 显式抹掉批发相关字段，让零售端只看到自己的零售价
       const { wholesaleEnabled, minWholesaleQty, dealerLevels, ...rest } = p as any
       void wholesaleEnabled
       void minWholesaleQty
       void dealerLevels
-      // SKU 也只保留零售相关字段
       rest.skus = (p.skus || []).map((s: any) => {
         const { priceTiers, ...skuRest } = s
         void priceTiers
-        return skuRest
+        return enrichSku(skuRest)
       })
       return rest
     }
-    return p
+    return { ...p, skus: (p.skus || []).map((s: any) => enrichSku(s)) }
   }
 
   /** 取一个默认仓库 id：优先 isDefault=true，否则取最早建的那个 */
@@ -224,7 +251,7 @@ export class ProductService {
                   // memberPrice 严格表示"零售会员价"，前端绝不能再把批发价塞进来
                   memberPrice: s.memberPrice == null || s.memberPrice === '' ? null : Number(s.memberPrice),
                   costPrice: s.costPrice == null || s.costPrice === '' ? null : Number(s.costPrice),
-                  stock: Number(s.stock || 0),
+                  // 库存不写 Sku 表，下面 upsertStockForSku 写到 Stock 表（唯一真源）
                   weight: s.weight == null || s.weight === '' ? null : Number(s.weight),
                   status: s.status ?? 1,
                 })),
@@ -277,6 +304,8 @@ export class ProductService {
 
         for (const s of skus) {
           const matchedSku = s.id ? existingById.get(Number(s.id)) : existingByCode.get(s.code)
+          // 表单 stock 不再写到 Sku 表，由 Stock 表唯一持有
+          const formStock = Number(s.stock || 0)
           const skuData = {
             code: s.code,
             specs: s.specs || {},
@@ -284,7 +313,6 @@ export class ProductService {
             retailPrice: Number(s.retailPrice || 0),
             memberPrice: s.memberPrice == null || s.memberPrice === '' ? null : Number(s.memberPrice),
             costPrice: s.costPrice == null || s.costPrice === '' ? null : Number(s.costPrice),
-            stock: Number(s.stock || 0),
             weight: s.weight == null || s.weight === '' ? null : Number(s.weight),
             status: s.status ?? 1,
           }
@@ -300,7 +328,7 @@ export class ProductService {
           touchedIds.push(skuId)
 
           // 同步默认仓 Stock（注意：不会动 reserved，避免覆盖正在占用中的订单）
-          await this.upsertStockForSku(tx, skuId, skuData.stock, warehouseId)
+          await this.upsertStockForSku(tx, skuId, formStock, warehouseId)
 
           // 重写 PriceTier：先删再插（priceTiers 数量通常很少，简单就好）
           await tx.priceTier.deleteMany({ where: { skuId } })

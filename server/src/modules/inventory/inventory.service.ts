@@ -189,15 +189,7 @@ export class InventoryService {
           relatedType: input.relatedType,
         },
       })
-      // 同步 SKU 表缓存
-      const agg = await tx.stock.aggregate({
-        where: { skuId: input.skuId },
-        _sum: { onHand: true },
-      })
-      await tx.sku.update({
-        where: { id: input.skuId },
-        data: { stock: agg._sum.onHand || 0 },
-      })
+      // 库存唯一真源是 Stock 表，不再同步 Sku.stock 缓存
       return { before, after }
     })
   }

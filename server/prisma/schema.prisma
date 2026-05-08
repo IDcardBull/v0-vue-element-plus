@@ -332,7 +332,7 @@ model Sku {
   retailPrice  Decimal   @map("retail_price") @db.Decimal(10, 2)
   memberPrice  Decimal?  @map("member_price") @db.Decimal(10, 2)
   costPrice    Decimal?  @map("cost_price") @db.Decimal(10, 2)
-  stock        Int       @default(0) // 缓存库存，真正值取 stocks 表聚合
+  // 注意：库存唯一真源是 Stock 表（按仓库维度），不在 Sku 上冗余字段
   weight       Decimal?  @db.Decimal(8, 3) // kg
   status       Int       @default(1)
   createdAt    DateTime  @default(now()) @map("created_at")
