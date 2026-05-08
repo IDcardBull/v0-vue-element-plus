@@ -208,7 +208,7 @@
         </el-descriptions>
 
         <h4 class="section-title">最近 3 笔订单</h4>
-        <el-table :data="recentOrders" size="small" border>
+        <el-table v-loading="detailLoading" :data="recentOrders" size="small" border>
           <el-table-column label="订单号" prop="orderNo" width="170" />
           <el-table-column label="商品" prop="product" />
           <el-table-column label="金额" width="110" align="right">
@@ -219,6 +219,9 @@
               <el-tag size="small" :type="row.statusType">{{ row.status }}</el-tag>
             </template>
           </el-table-column>
+          <template #empty>
+            {{ detailLoading ? '加载中...' : '该会员暂无订单' }}
+          </template>
         </el-table>
       </div>
     </el-drawer>
@@ -429,28 +432,62 @@ function handleImport() {
 
 const detailVisible = ref(false)
 const currentCustomer = ref<Customer | null>(null)
-const recentOrders = ref([
-  { orderNo: 'SO-2026-04200-128', product: '青花瓷盖碗茶具 × 1', amount: '880.00', status: '已完成', statusType: 'success' },
-  { orderNo: 'SO-2026-03150-892', product: '汝窑主人杯 × 2', amount: '760.00', status: '已完成', statusType: 'success' },
-  { orderNo: 'SO-2026-02280-445', product: '羊脂玉白瓷花瓶', amount: '1280.00', status: '售后中', statusType: 'warning' },
-])
+const recentOrders = ref<Array<{
+  orderNo: string
+  product: string
+  amount: string
+  status: string
+  statusType: string
+}>>([])
+const detailLoading = ref(false)
 
-function handleDetail(row: Customer) {
+async function handleDetail(row: Customer) {
+  // 先用列表里的概要把抽屉撑开，再异步拉详情补 recentOrders
   currentCustomer.value = row
   detailVisible.value = true
+  recentOrders.value = []
+  detailLoading.value = true
+  try {
+    const detail: any = await customerApi.get(row.id)
+    if (detail) {
+      currentCustomer.value = { ...row, ...detail }
+      recentOrders.value = Array.isArray(detail.recentOrders) ? detail.recentOrders : []
+    }
+  } catch (err: any) {
+    ElMessage.warning(err?.message || '订单详情加载失败')
+  } finally {
+    detailLoading.value = false
+  }
 }
 
-function handlePoint(row: Customer) {
-  ElMessageBox.prompt(`为「${row.nickname}」调整积分`, '积分调整', {
-    inputPlaceholder: '正数增加，负数扣减',
-    inputValidator: (val) => {
-      if (!val || Number.isNaN(Number(val))) return '请输入数字'
-      return true
-    },
-  }).then(({ value }) => {
-    row.points += Number(value)
-    ElMessage.success(`积分已调整：${value > '0' ? '+' : ''}${value}`)
-  }).catch(() => {})
+async function handlePoint(row: Customer) {
+  let raw = ''
+  try {
+    const res = await ElMessageBox.prompt(`为「${row.nickname}」调整积分`, '积分调整', {
+      inputPlaceholder: '正数增加，负数扣减，例如 +100 或 -50',
+      inputValidator: (val) => {
+        if (!val) return '请输入数字'
+        const n = Number(val)
+        if (Number.isNaN(n)) return '请输入数字'
+        if (!Number.isInteger(n)) return '积分必须是整数'
+        if (Math.abs(n) > 1000000) return '单次调整不超过 100 万'
+        if (n < 0 && row.points + n < 0) return `当前积分 ${row.points}，最多可扣 ${row.points}`
+        return true
+      },
+    })
+    raw = res.value
+  } catch {
+    return
+  }
+  const delta = Math.trunc(Number(raw))
+  if (delta === 0) return
+  try {
+    await customerApi.update(row.id, { pointsDelta: delta })
+    row.points += delta
+    ElMessage.success(`已${delta > 0 ? '增加' : '扣减'}积分 ${Math.abs(delta)}`)
+  } catch (err: any) {
+    ElMessage.error(err?.message || '调分失败')
+  }
 }
 
 function handleMessage(row: Customer) {

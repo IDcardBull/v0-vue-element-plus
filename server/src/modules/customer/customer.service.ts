@@ -187,14 +187,28 @@ export class CustomerService {
     // 详情多带最近 3 笔订单
     return {
       ...item,
-      recentOrders: recent.map((o: any) => ({
-        orderNo: o.orderNo,
-        product: o.items?.[0]?.productName
-          ? `${o.items[0].productName}${o.items.length > 1 ? ` 等 ${o.items.length} 件` : ''}`
-          : '',
-        amount: Number(o.totalAmount).toFixed(2),
-        status: o.status,
-      })),
+      // 同时返回 status (中文) + statusType (el-tag type)，前端表格直接 v-bind 使用
+      recentOrders: recent.map((o: any) => {
+        const map: Record<string, { text: string; type: string }> = {
+          pending_pay: { text: '待付款', type: 'warning' },
+          pending_ship: { text: '待发货', type: 'info' },
+          shipped: { text: '已发货', type: 'primary' },
+          completed: { text: '已完成', type: 'success' },
+          closed: { text: '已关闭', type: 'info' },
+          after_sale: { text: '售后中', type: 'warning' },
+          refunded: { text: '已退款', type: 'danger' },
+        }
+        const m = map[o.status] || { text: o.status, type: 'info' }
+        return {
+          orderNo: o.orderNo,
+          product: o.items?.[0]?.productName
+            ? `${o.items[0].productName}${o.items.length > 1 ? ` 等 ${o.items.length} 件` : ''}`
+            : '',
+          amount: Number(o.totalAmount).toFixed(2),
+          status: m.text,
+          statusType: m.type,
+        }
+      }),
     }
   }
 
