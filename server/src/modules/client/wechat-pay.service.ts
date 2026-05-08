@@ -201,7 +201,7 @@ export class WechatPayService {
    * @param orderNo     商户订单号（out_trade_no）
    * @param amount      金额（元，小数即可，内部转分）
    * @param openid      支付用户 openid（小程序登录时拿到）
-   * @param description 商品描述（≤127 字符）
+   * @param description ��品描述（≤127 字符）
    */
   async createJsApiOrder(
     orderNo: string,
@@ -220,6 +220,17 @@ export class WechatPayService {
     const pay = this.ensureReady()
     if (!orderNo) throw new BadRequestException('orderNo 不能为空')
     if (!openid) throw new BadRequestException('openid 不能为空')
+    // 拒绝 dev fallback 留下的假 openid（dev_xxx_local），避免去微信侧
+    // 报含义模糊的 PARAM_ERROR: 无效的openid
+    if (openid.startsWith('dev_')) {
+      throw new BadRequestException(
+        '当前用户使用的是开发回退 openid（jscode2session 失败时生成的占位 ID），无法发起真实支付。\n' +
+          '请检查：\n' +
+          '  1. 微信开发者工具 → 详情 → 项目设置 中的 AppID 必须与后端 .env 的 WX_APPID 一致\n' +
+          '  2. server/.env 的 WX_SECRET 是否正确\n' +
+          '  3. 清除小程序登录态后重新 wx.login 拿到真实 openid',
+      )
+    }
     const totalFen = Math.round(Number(amount) * 100)
     if (!Number.isFinite(totalFen) || totalFen <= 0) {
       throw new BadRequestException('支付金额必须大于 0')
