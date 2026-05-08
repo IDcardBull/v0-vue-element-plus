@@ -158,6 +158,10 @@ export class OrderService {
     // 1. 拼装订单项 & 计算金额
     const itemRecords: any[] = []
     let totalAmount = 0
+    // 运费策略：取所有"非包邮"商品中 shippingFee 最大值；全部包邮 -> 0
+    // （后续若做按收货地址分省加价，把这里换成模板查询即可，前端无需改动）
+    let computedFreightMax = 0
+    let allFreeShipping = true
     for (const it of input.items) {
       const sku = await this.prisma.sku.findUnique({
         where: { id: it.skuId },
@@ -176,6 +180,15 @@ export class OrderService {
       }
       const subtotal = unitPrice * it.qty
       totalAmount += subtotal
+
+      // 累计运费：注意 prisma Decimal 字段需 Number()
+      const productFree = (sku.product as any).freeShipping === true
+      const productFee = Number((sku.product as any).shippingFee || 0)
+      if (!productFree) {
+        allFreeShipping = false
+        if (productFee > computedFreightMax) computedFreightMax = productFee
+      }
+
       itemRecords.push({
         productId: sku.productId,
         skuId: sku.id,
@@ -260,7 +273,11 @@ export class OrderService {
         })
       }
 
-      const freight = input.freight || 0
+      // 运费：批发/授信下单允许调用方传 input.freight（如线下议价单）；
+      // 普通零售订单一律按商品配置自动计算
+      const autoFreight = allFreeShipping ? 0 : computedFreightMax
+      const freight =
+        input.freight != null && input.freight >= 0 ? Number(input.freight) : autoFreight
       return tx.order.create({
         data: {
           orderNo,
@@ -338,7 +355,7 @@ export class OrderService {
         }
       }
 
-      // 累计商品销量 + 用户总消费
+      // 累计商品销量 + 用户总���费
       for (const it of order.items) {
         await tx.product.update({
           where: { id: it.productId },
