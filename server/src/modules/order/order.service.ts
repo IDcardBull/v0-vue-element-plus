@@ -239,7 +239,7 @@ export class OrderService {
             )
           }
           throw new BadRequestException(
-            `「${sku.product.name} / ${sku.skuCode}」(skuId=${sku.id}) 还未建立库存记录，请到管理端"库存管理"录入`,
+            `「${sku.product.name} / ${sku.code}」(skuId=${sku.id}) 还未建立库存记录，请到管理端"库存管理"录入`,
           )
         }
         let remain = it.qty
@@ -260,7 +260,7 @@ export class OrderService {
             include: { product: { select: { name: true } } },
           })
           throw new BadRequestException(
-            `「${sku?.product.name || ''} / ${sku?.skuCode || it.skuId}」库存不足`,
+            `「${sku?.product.name || ''} / ${sku?.code || it.skuId}」库存不足`,
           )
         }
       }
