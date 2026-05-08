@@ -52,6 +52,10 @@ interface ProductFormModel {
   gallery: string[]
   description: string
   status: 'on' | 'off' | 'draft'
+  /** 是否包邮（true 时忽略运费） */
+  free_shipping: boolean
+  /** 默认运费（元）。结合用户地址做远近分区运费时再扩展运费模板 */
+  shipping_fee: number | null
 }
 
 /* ----------------------------------- 路由 ---------------------------------- */
@@ -84,6 +88,8 @@ const form = reactive<ProductFormModel>({
   gallery: [],
   description: '',
   status: 'draft',
+  free_shipping: false,
+  shipping_fee: 0,
 })
 
 const rules: FormRules<ProductFormModel> = {
@@ -370,6 +376,11 @@ function fillSkuList(skus: any[]) {
   rebuildSpecsFromSkus(skus)
   skuList.value = skus.map((sku, index) => {
     const combo = sku.specs || {}
+    // 批发价从 priceTiers 取最低档：[{minQty, price}, ...]
+    const tiers = Array.isArray(sku.priceTiers) ? sku.priceTiers : []
+    const firstTier = tiers
+      .slice()
+      .sort((a: any, b: any) => Number(a.minQty || 0) - Number(b.minQty || 0))[0]
     return {
       id: sku.id,
       key: Object.values(combo).join('|') || `sku-${sku.id || index}`,
@@ -377,9 +388,7 @@ function fillSkuList(skus: any[]) {
       sku_code: sku.code || '',
       sku_image: normalizeSkuImageUrl(sku),
       retail_price: Number(sku.retailPrice ?? form.retail_price ?? 0),
-      wholesale_price: sku.memberPrice === null || sku.memberPrice === undefined
-        ? null
-        : Number(sku.memberPrice),
+      wholesale_price: firstTier && firstTier.price != null ? Number(firstTier.price) : null,
       cost: sku.costPrice === null || sku.costPrice === undefined ? null : Number(sku.costPrice),
       stock: Number(sku.stock ?? 0),
       enabled: sku.status !== 0,
@@ -415,6 +424,8 @@ async function loadProductDetail() {
       gallery: normalizeImageList(item.images),
       description: item.detail || '',
       status: item.status === 1 ? 'on' : 'draft',
+      free_shipping: item.freeShipping === true,
+      shipping_fee: item.shippingFee == null ? 0 : Number(item.shippingFee),
     })
     fillSkuList(item.skus || [])
   } catch (error) {
@@ -444,6 +455,8 @@ async function persistCustomDictOptions() {
 function buildProductPayload(status: 'on' | 'draft') {
   const categoryId = Number(form.category_id)
   const brandId = form.brand_id ? Number(form.brand_id) : undefined
+  const minQty = Math.max(Number(form.min_wholesale_qty || 1), 1)
+  const wholesaleEnabled = form.app_scope.includes('wholesale')
   return {
     code: form.code,
     name: form.name,
@@ -457,28 +470,39 @@ function buildProductPayload(status: 'on' | 'draft') {
     tags: form.tags,
     retailEnabled: form.app_scope.includes('retail'),
     retailPrice: Number(skuList.value.find((s) => s.enabled)?.retail_price || 0),
-    memberPrice: form.market_price === null ? undefined : Number(form.market_price),
-    wholesaleEnabled: form.app_scope.includes('wholesale'),
-    minWholesaleQty: Number(form.min_wholesale_qty || 1),
+    // memberPrice 严格表示"零售会员价/活动价"，由"市场价"输入框驱动；为空就 null
+    memberPrice: form.market_price === null ? null : Number(form.market_price),
+    wholesaleEnabled,
+    minWholesaleQty: minQty,
+    freeShipping: !!form.free_shipping,
+    shippingFee: form.free_shipping ? 0 : Number(form.shipping_fee || 0),
     status: status === 'on' ? 1 : 0,
     skus: skuList.value
       .filter((sku) => sku.enabled)
-      .map((sku, index) => ({
-        id: sku.id,
-        code: sku.sku_code || `${form.code}-SKU-${index + 1}`,
-        specs: sku.combo,
-        image: sku.sku_image || form.main_image || undefined,
-        skuImage: sku.sku_image || form.main_image || undefined,
-        sku_image: sku.sku_image || form.main_image || undefined,
-        retailPrice: Number(sku.retail_price || form.retail_price || 0),
-        memberPrice: sku.wholesale_price === null
-          ? (form.market_price === null ? undefined : Number(form.market_price))
-          : Number(sku.wholesale_price),
-        costPrice: sku.cost === null ? undefined : Number(sku.cost),
-        stock: Number(sku.stock || 0),
-        weight: form.weight === null ? undefined : Number(form.weight),
-        status: 1,
-      })),
+      .map((sku, index) => {
+        // 批发价 → 一档 priceTier；如果没启批发或没填批发价，priceTiers 留空数组（后端会清掉旧档）
+        const wp = sku.wholesale_price
+        const priceTiers =
+          wholesaleEnabled && wp !== null && wp !== undefined && Number(wp) >= 0
+            ? [{ minQty, maxQty: null, price: Number(wp) }]
+            : []
+        return {
+          id: sku.id,
+          code: sku.sku_code || `${form.code}-SKU-${index + 1}`,
+          specs: sku.combo,
+          image: sku.sku_image || form.main_image || undefined,
+          skuImage: sku.sku_image || form.main_image || undefined,
+          sku_image: sku.sku_image || form.main_image || undefined,
+          retailPrice: Number(sku.retail_price || form.retail_price || 0),
+          // SKU 级别的会员价同步 form.market_price，避免和 product.memberPrice 不一致
+          memberPrice: form.market_price === null ? null : Number(form.market_price),
+          costPrice: sku.cost === null ? null : Number(sku.cost),
+          stock: Number(sku.stock || 0),
+          weight: form.weight === null ? null : Number(form.weight),
+          status: 1,
+          priceTiers,
+        }
+      }),
   }
 }
 /* --------------------------------- 提交操作 -------------------------------- */
@@ -721,6 +745,30 @@ onMounted(async () => {
                 :min="0"
                 :precision="2"
                 :controls="false"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="是否包邮">
+              <el-switch
+                v-model="form.free_shipping"
+                active-text="包邮"
+                inactive-text="按运费"
+                inline-prompt
+              />
+              <div class="form-tip">开启后忽略默认运费；可在订单结算时按用户地址再做远近调整。</div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="默认运费">
+              <el-input-number
+                v-model="form.shipping_fee"
+                :min="0"
+                :precision="2"
+                :controls="false"
+                :disabled="form.free_shipping"
+                placeholder="不包邮时收取的默认运费"
                 style="width: 100%"
               />
             </el-form-item>
