@@ -259,10 +259,36 @@ export class OrderService {
 
       let unitPrice = Number(sku.retailPrice)
       if (input.channel === 'wholesale') {
-        const tierPrice = await this.priceTier.matchPrice(it.skuId, it.qty)
-        if (tierPrice == null)
-          throw new BadRequestException(`${sku.product.name} 未达到最低起订量`)
-        unitPrice = tierPrice
+        const product = sku.product as any
+        // 1. 商品必须开启批发渠道
+        if (!product.wholesaleEnabled) {
+          throw new BadRequestException(`${product.name} 暂不支持批发下单`)
+        }
+        // 2. product 级硬性起订量校验（前端 getMinWholesaleQty 也优先取这个值，
+        //    所以 UI 显示的"≥ N 件起批"就是这个 N）
+        const productMoq = Number(product.minWholesaleQty || 1)
+        if (it.qty < productMoq) {
+          throw new BadRequestException(
+            `${product.name} 起订量 ${productMoq} 件，当前 ${it.qty} 件`,
+          )
+        }
+        // 3. 阶梯价匹配
+        //    - 没配阶梯价 (tiers=[]) → 兜底用 sku.retailPrice，不再误报"未达起订量"
+        //    - 配了阶梯价但 qty 没命中任何档位 → 报具体档位信息
+        const tiers = await this.priceTier.listBySku(it.skuId)
+        if (tiers.length === 0) {
+          // 没配阶梯：批发价 = retailPrice（与零售同价，仅靠 product 级 MOQ 控量）
+          unitPrice = Number(sku.retailPrice)
+        } else {
+          const tierPrice = await this.priceTier.matchPrice(it.skuId, it.qty)
+          if (tierPrice == null) {
+            const firstMin = Number(tiers[0].minQty)
+            throw new BadRequestException(
+              `${product.name} 阶梯价最低 ${firstMin} 件起，当前 ${it.qty} 件`,
+            )
+          }
+          unitPrice = tierPrice
+        }
       } else if (user.levelId && sku.memberPrice) {
         unitPrice = Number(sku.memberPrice)
       }
