@@ -168,48 +168,65 @@ function resetFilters() {
   page.current = 1
 }
 
-function handleApprove(row: Distributor) {
-  ElMessageBox.confirm(
-    `确认通过 "${row.company_name}" 的入驻申请？`,
-    '审核通过',
-    { confirmButtonText: '通过', cancelButtonText: '取消', type: 'success' },
-  )
-    .then(() => {
-      row.status = 'approved'
-      row.level = 'regular'
-      row.credit_limit = 50000
-      ElMessage.success('已审核通过')
-    })
-    .catch(() => void 0)
+async function handleApprove(row: Distributor) {
+  try {
+    await ElMessageBox.confirm(
+      `确认通过 "${row.company_name}" 的入驻申请？通过后该用户在批发端可以看到批发价。`,
+      '审核通过',
+      { confirmButtonText: '通过', cancelButtonText: '取消', type: 'success' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await distributorApi.audit(Number(row.id), true)
+    ElMessage.success('已审核通过，已通知运营群')
+    await loadDistributors()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '审核失败')
+  }
 }
 
-function handleReject(row: Distributor) {
-  ElMessageBox.prompt(`请输入拒绝理由`, `拒绝 "${row.company_name}"`, {
-    confirmButtonText: '确认拒绝',
-    cancelButtonText: '取消',
-    inputType: 'textarea',
-    inputPlaceholder: '请填写拒绝原因...',
-    inputValidator: (v) => (v && v.trim().length >= 3 ? true : '理由不少于 3 字'),
-  })
-    .then(({ value }) => {
-      row.status = 'rejected'
-      row.remark = value
-      ElMessage.success('已拒绝')
+async function handleReject(row: Distributor) {
+  let reason = ''
+  try {
+    const res = await ElMessageBox.prompt(`请输入拒绝理由`, `拒绝 "${row.company_name}"`, {
+      confirmButtonText: '确认拒绝',
+      cancelButtonText: '取消',
+      inputType: 'textarea',
+      inputPlaceholder: '请填写拒绝原因...',
+      inputValidator: (v) => (v && v.trim().length >= 3 ? true : '理由不少于 3 字'),
     })
-    .catch(() => void 0)
+    reason = res.value
+  } catch {
+    return
+  }
+  try {
+    await distributorApi.audit(Number(row.id), false, reason)
+    ElMessage.success('已拒绝')
+    await loadDistributors()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '操作失败')
+  }
 }
 
-function handleToggleStatus(row: Distributor) {
+async function handleToggleStatus(row: Distributor) {
   const next = row.status === 'approved' ? 'disabled' : 'approved'
   const word = next === 'disabled' ? '禁用' : '启用'
-  ElMessageBox.confirm(`确定${word}分销商 "${row.company_name}" ？`, '提示', {
-    type: 'warning',
-  })
-    .then(() => {
-      row.status = next
-      ElMessage.success(`已${word}`)
+  try {
+    await ElMessageBox.confirm(`确定${word}分销商 "${row.company_name}" ？`, '提示', {
+      type: 'warning',
     })
-    .catch(() => void 0)
+  } catch {
+    return
+  }
+  try {
+    await distributorApi.update(Number(row.id), { status: next })
+    ElMessage.success(`已${word}`)
+    await loadDistributors()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '操作失败')
+  }
 }
 
 /* ---------------------------- 新增 / 编辑 分销商 Dialog ---------------------------- */
@@ -256,23 +273,32 @@ async function submitForm() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
   if (dialogMode.value === 'create') {
-    allList.value.unshift({
-      ...(formModel as Distributor),
-      id: `d-${Date.now()}`,
-      code: `DS${Date.now().toString().slice(-8)}`,
-      status: 'approved',
-      used_credit: 0,
-      order_count: 0,
-      total_amount: 0,
-      join_date: new Date().toISOString().slice(0, 10),
-    })
-    ElMessage.success('已新增分销商')
-  } else {
-    const target = allList.value.find((d) => d.id === formModel.id)
-    if (target) Object.assign(target, formModel)
-    ElMessage.success('已保存修改')
+    // 分销商不支持后台直接新增（必须由用户在批发小程序端发起入驻申请）
+    // 这里给个明确提示，避免运营误用
+    ElMessage.warning(
+      '分销商需由用户在批发小程序端提交入驻申请，运营仅做审核 / 编辑',
+    )
+    dialogVisible.value = false
+    return
   }
-  dialogVisible.value = false
+  // 编辑：调真实 update API
+  try {
+    await distributorApi.update(Number(formModel.id), {
+      company_name: formModel.company_name,
+      contact: formModel.contact,
+      phone: formModel.phone,
+      province: formModel.province,
+      city: formModel.city,
+      level: formModel.level,
+      credit_limit: formModel.credit_limit,
+      remark: formModel.remark,
+    })
+    ElMessage.success('已保存修改')
+    dialogVisible.value = false
+    await loadDistributors()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '保存失败')
+  }
 }
 
 /* ---------------------------- 详情抽屉 ---------------------------- */
