@@ -127,10 +127,13 @@ export class ClientOrderController {
     let legacyAllFree = true
     let legacyHasItem = false
     const legacyProductNames: string[] = [] // 没挂模板的商品名
-    const templateGroups = new Map<
-      number,
-      { template: ShippingTemplateLike; items: ShippingItemInput[]; templateName: string }
-    >()
+
+    type Group = {
+      template: ShippingTemplateLike
+      items: ShippingItemInput[]
+      templateName: string
+    }
+    const templateGroups = new Map<number, Group>()
 
     for (const it of dto.items) {
       const sku = await this.prisma.sku.findUnique({
@@ -139,28 +142,50 @@ export class ClientOrderController {
       })
       if (!sku) throw new BadRequestException(`SKU ${it.skuId} 不存在`)
       const product: any = sku.product
-      // 价格：批发渠道用阶梯价首档，零售用 SKU 售价
-      const unitPrice =
-        channel === 'wholesale'
-          ? Number(sku.wholesalePrice ?? sku.price ?? 0)
-          : Number(sku.price ?? 0)
       const qty = Math.max(1, Number(it.qty) || 1)
+
+      // 价格：preview 与 createOrder 同源 —— SKU 表里只有 retailPrice / memberPrice，
+      // 批发档位价在 PriceTier 表。preview 不做 MOQ 强校验（让前端能展示总价），
+      // 但价格本身要尽量贴近真实下单价。
+      let unitPrice = Number(sku.retailPrice)
+      if (channel === 'wholesale') {
+        // 取该 SKU 已配置的最高阶梯价对应价格（按 minQty 升序找命中档）
+        const tiers = await this.prisma.priceTier.findMany({
+          where: { skuId: sku.id },
+          orderBy: { minQty: 'asc' },
+        })
+        if (tiers.length) {
+          let matched: number | null = null
+          for (const t of tiers) {
+            if (qty >= Number(t.minQty)) matched = Number(t.price)
+          }
+          // qty 小于最低档位也用最低档位价做预估，避免 preview 显示混乱
+          unitPrice = matched != null ? matched : Number(tiers[0].price)
+        }
+      } else if (sku.memberPrice != null) {
+        // 零售：登录用户若有会员价用会员价（保持和 createOrder 类似的优先级）
+        unitPrice = Number(sku.memberPrice)
+      }
+
       const subtotal = unitPrice * qty
       totalAmount += subtotal
 
       if (product.shippingTemplate) {
         const tpl: ShippingTemplateLike = product.shippingTemplate
-        const group = templateGroups.get(tpl.id) || {
-          template: tpl,
-          items: [],
-          templateName: (product.shippingTemplate as any).name,
+        let group = templateGroups.get(tpl.id)
+        if (!group) {
+          group = {
+            template: tpl,
+            items: [],
+            templateName: (product.shippingTemplate as any).name,
+          }
+          templateGroups.set(tpl.id, group)
         }
         group.items.push({
           qty,
           weight: sku.weight == null ? 0 : Number(sku.weight),
           subtotal,
         })
-        templateGroups.set(tpl.id, group)
       } else {
         legacyHasItem = true
         legacyProductNames.push(product.name)

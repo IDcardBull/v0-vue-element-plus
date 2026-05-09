@@ -120,6 +120,7 @@ let WechatPayService = WechatPayService_1 = class WechatPayService {
         this.notifyUrl = this.config.get('WX_PAY_NOTIFY_URL');
         this.apiV3Key = this.config.get('WX_PAY_API_V3_KEY');
         const serialNo = this.config.get('WX_PAY_SERIAL_NO');
+        this.serialNo = serialNo;
         const keyPath = this.config.get('WX_PAY_PRIVATE_KEY_PATH');
         // 至少要有一个 channel 配齐 appid 才有意义
         const anyAppid = this.appidMap.retail || this.appidMap.wholesale;
@@ -547,6 +548,73 @@ let WechatPayService = WechatPayService_1 = class WechatPayService {
         }
         // 2. 解密
         return this.decryptResource(rawBody);
+    }
+    /**
+     * 主动查询订单支付状态（V3）
+     *
+     * 业务用途：开发期/网络异常时微信回调（notify）可能推不进来，
+     * 用户支付完回到小程序时，前端调用 POST /client/pay/orders/:id/sync，
+     * 后端用本方法去微信查实际 trade_state，命中 SUCCESS 则立刻 markPaid，
+     * 不再死等异步回调，避免"明明付钱了但订单还是待支付"。
+     *
+     * 接口：GET https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no/{out_trade_no}?mchid={mchid}
+     * 文档：https://pay.weixin.qq.com/wiki/doc/apiv3/apis/chapter3_1_5.shtml
+     */
+    async queryOrderByOutTradeNo(orderNo) {
+        if (!this.mchid || !this.privateKeyPem || !this.serialNo) {
+            throw new common_1.ServiceUnavailableException('微信支付未配置，无法查询订单');
+        }
+        const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(orderNo)}?mchid=${this.mchid}`;
+        const url = `https://api.mch.weixin.qq.com${path}`;
+        // 构造 V3 Authorization 头：
+        //   WECHATPAY2-SHA256-RSA2048 mchid="...",nonce_str="...",signature="...",timestamp="...",serial_no="..."
+        const timestamp = Math.floor(Date.now() / 1000).toString();
+        const nonceStr = crypto.randomBytes(16).toString('hex');
+        const message = `GET\n${path}\n${timestamp}\n${nonceStr}\n\n`; // body 空
+        const signature = this.rsaSignBase64(message);
+        const authorization = `WECHATPAY2-SHA256-RSA2048 ` +
+            `mchid="${this.mchid}",` +
+            `nonce_str="${nonceStr}",` +
+            `signature="${signature}",` +
+            `timestamp="${timestamp}",` +
+            `serial_no="${this.serialNo}"`;
+        let resp;
+        try {
+            resp = await axios_1.default.get(url, {
+                timeout: 8000,
+                headers: {
+                    Authorization: authorization,
+                    Accept: 'application/json',
+                    'User-Agent': 'yangming-server',
+                },
+                // 让 axios 不在 4xx 时自己抛错，由我们读取 body 拿真实 code
+                validateStatus: () => true,
+            });
+        }
+        catch (err) {
+            this.logger.error(`[WechatPay] queryOrder 请求失败: ${err?.message}`, err?.stack);
+            throw new common_1.InternalServerErrorException(err?.message || '查询微信订单失败');
+        }
+        if (resp.status === 404) {
+            // 订单尚未在微信侧落地：可能用户根本没真正发起支付，或 prepay 后立即取消
+            return { trade_state: 'NOTPAY', raw: resp.data };
+        }
+        if (resp.status >= 400) {
+            const code = resp.data?.code || `HTTP_${resp.status}`;
+            const msg = resp.data?.message || JSON.stringify(resp.data || {});
+            this.logger.warn(`[WechatPay] queryOrder ${orderNo} 返回 ${resp.status}: ${code} ${msg}`);
+            // 把微信原始 code/message 抛出，前端可以辨别"用户支付中"等中间态
+            throw new common_1.InternalServerErrorException(`${code}: ${msg}`);
+        }
+        const data = resp.data || {};
+        return {
+            out_trade_no: data.out_trade_no,
+            transaction_id: data.transaction_id,
+            trade_state: data.trade_state,
+            trade_state_desc: data.trade_state_desc,
+            amount: data.amount,
+            raw: data,
+        };
     }
     /** 公共：从 envelope.resource.ciphertext 还原明文 JSON */
     decryptResource(rawBody) {

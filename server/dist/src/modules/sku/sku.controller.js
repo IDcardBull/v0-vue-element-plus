@@ -22,6 +22,20 @@ __decorate([
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], UpdateStockDto.prototype, "stock", void 0);
+class UpdatePriceDto {
+}
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], UpdatePriceDto.prototype, "retailPrice", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], UpdatePriceDto.prototype, "memberPrice", void 0);
 let SkuController = class SkuController {
     constructor(svc) {
         this.svc = svc;
@@ -34,6 +48,13 @@ let SkuController = class SkuController {
     }
     updateStock(id, dto) {
         return this.svc.updateStock(id, dto.stock);
+    }
+    /**
+     * 修改 SKU 价格（零售/会员价）
+     * 批发阶梯价由 priceTiers 表管理，本接口只动 SKU 自身的 retailPrice/memberPrice
+     */
+    updatePrice(id, dto) {
+        return this.svc.updatePrice(id, dto);
     }
 };
 exports.SkuController = SkuController;
@@ -59,6 +80,14 @@ __decorate([
     __metadata("design:paramtypes", [Number, UpdateStockDto]),
     __metadata("design:returntype", void 0)
 ], SkuController.prototype, "updateStock", null);
+__decorate([
+    (0, common_1.Patch)(':id/price'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, UpdatePriceDto]),
+    __metadata("design:returntype", void 0)
+], SkuController.prototype, "updatePrice", null);
 exports.SkuController = SkuController = __decorate([
     (0, common_1.Controller)('admin/sku'),
     __metadata("design:paramtypes", [sku_service_1.SkuService])

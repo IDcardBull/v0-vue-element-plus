@@ -142,6 +142,8 @@ let ProductService = class ProductService {
             where: { id },
             include: {
                 category: true,
+                // 编辑/详情页可以回显运费模板名称，零售端不需要也无害
+                shippingTemplate: { select: { id: true, name: true, calcType: true } },
                 skus: {
                     orderBy: { id: 'asc' },
                     include: channel === 'retail' ? undefined : { priceTiers: { orderBy: { minQty: 'asc' } } },
@@ -230,9 +232,16 @@ let ProductService = class ProductService {
                 : rest.shipping_fee != null
                     ? Number(rest.shipping_fee)
                     : 0,
+            // 运费模板：'' / 0 / null 都视为未选
+            shippingTemplateId: rest.shippingTemplateId == null ||
+                rest.shippingTemplateId === '' ||
+                Number(rest.shippingTemplateId) === 0
+                ? null
+                : Number(rest.shippingTemplateId),
         };
         delete productScalars.free_shipping;
         delete productScalars.shipping_fee;
+        delete productScalars.shipping_template_id;
         return this.prisma.$transaction(async (tx) => {
             const created = await tx.product.create({
                 data: {
@@ -283,8 +292,15 @@ let ProductService = class ProductService {
             const v = rest.shippingFee ?? rest.shipping_fee;
             productScalars.shippingFee = v == null || v === '' ? 0 : Number(v);
         }
+        if (rest.shippingTemplateId !== undefined ||
+            rest.shipping_template_id !== undefined) {
+            const v = rest.shippingTemplateId ?? rest.shipping_template_id;
+            productScalars.shippingTemplateId =
+                v == null || v === '' || Number(v) === 0 ? null : Number(v);
+        }
         delete productScalars.free_shipping;
         delete productScalars.shipping_fee;
+        delete productScalars.shipping_template_id;
         if (Array.isArray(skus)) {
             await this.prisma.$transaction(async (tx) => {
                 await tx.product.update({ where: { id }, data: productScalars });

@@ -100,6 +100,11 @@ __decorate([
 ], ProductDto.prototype, "dealerLevels", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Object)
+], ProductDto.prototype, "shippingTemplateId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Boolean)
 ], ProductDto.prototype, "freeShipping", void 0);
 __decorate([

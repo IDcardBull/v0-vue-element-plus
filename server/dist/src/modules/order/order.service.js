@@ -18,6 +18,7 @@ const inventory_service_1 = require("../inventory/inventory.service");
 const wechat_pay_service_1 = require("../client/wechat-pay.service");
 const kuaidi100_service_1 = require("../logistics/kuaidi100.service");
 const work_wx_service_1 = require("../notify/work-wx.service");
+const shipping_template_calc_1 = require("../shipping-template/shipping-template.calc");
 function normalizeOrderChannel(channel) {
     const value = String(channel || '').trim();
     if (!value || value === 'all')
@@ -228,14 +229,17 @@ let OrderService = OrderService_1 = class OrderService {
         // 1. 拼装订单项 & 计算金额
         const itemRecords = [];
         let totalAmount = 0;
-        // 运费策略：取所有"非包邮"商品中 shippingFee 最大值；全部包邮 -> 0
-        // （后续若做按收货地址分省加价，把这里换成模板查询即可，前端无需改动）
-        let computedFreightMax = 0;
-        let allFreeShipping = true;
+        // 运费策略（双轨）：
+        //   A. 商品挂了 shippingTemplateId → 按模板分组累加（满额包邮、特殊地区按收件省匹配）
+        //   B. 没挂模板 → 回退到旧字段：freeShipping=true 全免邮，否则取最大 shippingFee
+        let legacyMaxFee = 0;
+        let legacyAllFree = true;
+        let legacyHasItem = false; // 是否存在"未挂模板"的商品
+        const templateGroups = new Map();
         for (const it of input.items) {
             const sku = await this.prisma.sku.findUnique({
                 where: { id: it.skuId },
-                include: { product: true },
+                include: { product: { include: { shippingTemplate: true } } },
             });
             if (!sku)
                 throw new common_1.BadRequestException(`SKU ${it.skuId} 不存在`);
@@ -274,13 +278,27 @@ let OrderService = OrderService_1 = class OrderService {
             }
             const subtotal = unitPrice * it.qty;
             totalAmount += subtotal;
-            // 累计运费：注意 prisma Decimal 字段需 Number()
-            const productFree = sku.product.freeShipping === true;
-            const productFee = Number(sku.product.shippingFee || 0);
-            if (!productFree) {
-                allFreeShipping = false;
-                if (productFee > computedFreightMax)
-                    computedFreightMax = productFee;
+            // 累计运费：优先按运费模板分组；否则走旧 freeShipping/shippingFee 兜底
+            const product = sku.product;
+            if (product.shippingTemplate) {
+                const tpl = product.shippingTemplate;
+                const group = templateGroups.get(tpl.id) || { template: tpl, items: [] };
+                group.items.push({
+                    qty: it.qty,
+                    weight: sku.weight == null ? 0 : Number(sku.weight),
+                    subtotal,
+                });
+                templateGroups.set(tpl.id, group);
+            }
+            else {
+                legacyHasItem = true;
+                const productFree = product.freeShipping === true;
+                const productFee = Number(product.shippingFee || 0);
+                if (!productFree) {
+                    legacyAllFree = false;
+                    if (productFee > legacyMaxFee)
+                        legacyMaxFee = productFee;
+                }
             }
             itemRecords.push({
                 productId: sku.productId,
@@ -355,8 +373,17 @@ let OrderService = OrderService_1 = class OrderService {
                 });
             }
             // 运费：批发/授信下单允许调用方传 input.freight（如线下议价单）；
-            // 普通零售订单一律按商品配置自动计算
-            const autoFreight = allFreeShipping ? 0 : computedFreightMax;
+            // 普通零售订单按"商品挂的运费模板"和"老 freeShipping/shippingFee"双轨叠加：
+            //   - 每个模板内的所有商品合并按件/按重量计算（含特殊地区 / 满额包邮）
+            //   - 没挂模板的商品仍按旧规则：全部包邮则 0，否则取最大 shippingFee
+            const province = (receiverSnapshot && (receiverSnapshot.province || receiverSnapshot.regionProvince)) ||
+                null;
+            let templateFreight = 0;
+            for (const { template, items } of templateGroups.values()) {
+                templateFreight += (0, shipping_template_calc_1.calcShippingByTemplate)(template, items, province);
+            }
+            const legacyFreight = legacyHasItem ? (legacyAllFree ? 0 : legacyMaxFee) : 0;
+            const autoFreight = Math.round((templateFreight + legacyFreight) * 100) / 100;
             const freight = input.freight != null && input.freight >= 0 ? Number(input.freight) : autoFreight;
             return tx.order.create({
                 data: {
