@@ -1,13 +1,19 @@
 <template>
   <div class="login-page">
     <div class="login-bg" />
+    <div class="login-orbs">
+      <span class="orb orb-1" />
+      <span class="orb orb-2" />
+      <span class="orb orb-3" />
+    </div>
+
     <div class="login-card">
       <div class="login-brand">
         <div class="brand-logo">
-          <el-icon :size="40"><Coffee /></el-icon>
+          <img src="/logo.png" alt="央皿" />
         </div>
-        <h1 class="brand-title">央皿陶瓷</h1>
-        <p class="brand-sub">一库多端后台管理系统</p>
+        <h1 class="brand-title">央&nbsp;皿</h1>
+        <p class="brand-sub">YANG MIN · 一库多端管理系统</p>
       </div>
 
       <el-form
@@ -21,7 +27,7 @@
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
-            placeholder="请输入账号"
+            placeholder="账号"
             :prefix-icon="User"
             autocomplete="username"
           />
@@ -30,7 +36,7 @@
           <el-input
             v-model="form.password"
             type="password"
-            placeholder="请输入密码"
+            placeholder="密码"
             :prefix-icon="Lock"
             show-password
             autocomplete="current-password"
@@ -44,13 +50,13 @@
             :loading="loading"
             native-type="submit"
           >
-            登录
+            登 录
           </el-button>
         </el-form-item>
       </el-form>
 
       <div class="login-tip">
-        <span>默认账号：admin / admin123</span>
+        <span>默认账号  admin / admin123</span>
       </div>
 
       <div class="login-footer">
@@ -64,7 +70,7 @@
 import { ref, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { User, Lock, Coffee } from '@element-plus/icons-vue'
+import { User, Lock } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -114,77 +120,119 @@ async function onSubmit() {
   justify-content: center;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, #1f2d3d 0%, #2a3f5f 50%, #3a2d1f 100%);
+  background: linear-gradient(135deg, #1a2533 0%, #243447 50%, #2d2418 100%);
 }
 .login-bg {
   position: absolute;
   inset: 0;
   background-image:
-    radial-gradient(circle at 20% 30%, rgba(200, 169, 106, 0.15) 0%, transparent 50%),
-    radial-gradient(circle at 80% 70%, rgba(200, 169, 106, 0.08) 0%, transparent 50%);
+    radial-gradient(circle at 18% 28%, rgba(200, 169, 106, 0.18) 0%, transparent 55%),
+    radial-gradient(circle at 82% 72%, rgba(94, 158, 255, 0.10) 0%, transparent 55%);
   pointer-events: none;
 }
+.login-orbs {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.35;
+}
+.orb-1 { width: 320px; height: 320px; background: #c8a96a; top: -80px; left: -60px; }
+.orb-2 { width: 260px; height: 260px; background: #5e9eff; bottom: -80px; right: -40px; }
+.orb-3 { width: 180px; height: 180px; background: #c8a96a; top: 40%; right: 18%; opacity: 0.18; }
+
 .login-card {
   position: relative;
   width: 420px;
-  background: rgba(255, 255, 255, 0.98);
-  border-radius: 16px;
-  padding: 48px 40px 32px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-radius: 20px;
+  padding: 44px 40px 28px;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.4) inset;
 }
 .login-brand {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 28px;
 }
 .brand-logo {
-  width: 72px;
-  height: 72px;
-  margin: 0 auto 16px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #c8a96a 0%, #a88a4d 100%);
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 14px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #ffffff 0%, #f5efe1 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: 0 6px 16px rgba(200, 169, 106, 0.35);
+  box-shadow: 0 10px 24px rgba(200, 169, 106, 0.28);
+  overflow: hidden;
+}
+.brand-logo img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
 }
 .brand-title {
   margin: 0;
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 600;
   color: #1f2d3d;
-  letter-spacing: 2px;
+  letter-spacing: 8px;
 }
 .brand-sub {
   margin: 8px 0 0;
   color: #8492a6;
-  font-size: 14px;
-  letter-spacing: 1px;
+  font-size: 12px;
+  letter-spacing: 3px;
 }
+
 .login-form :deep(.el-input__wrapper) {
-  padding: 4px 12px;
+  padding: 6px 14px;
+  border-radius: 10px !important;
+  box-shadow: 0 0 0 1px #e8ecf1 inset;
+  transition: box-shadow 0.2s;
 }
+.login-form :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #c8a96a inset;
+}
+.login-form :deep(.el-input.is-focus .el-input__wrapper) {
+  box-shadow: 0 0 0 1.5px #c8a96a inset !important;
+}
+
 .login-btn {
   width: 100%;
-  height: 44px;
-  font-size: 16px;
-  letter-spacing: 4px;
+  height: 46px;
+  font-size: 15px;
+  letter-spacing: 8px;
+  border-radius: 10px;
   background: linear-gradient(135deg, #1f2d3d 0%, #2a3f5f 100%);
   border: none;
+  box-shadow: 0 6px 18px rgba(31, 45, 61, 0.28);
+  transition: transform 0.15s, box-shadow 0.2s;
 }
 .login-btn:hover {
   background: linear-gradient(135deg, #2a3f5f 0%, #1f2d3d 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(31, 45, 61, 0.36);
 }
+
 .login-tip {
   text-align: center;
   color: #c8a96a;
   font-size: 12px;
-  padding: 4px 0 16px;
+  letter-spacing: 1px;
+  padding: 4px 0 14px;
 }
 .login-footer {
   text-align: center;
   color: #c0c4cc;
   font-size: 12px;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 </style>
