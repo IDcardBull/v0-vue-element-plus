@@ -4,7 +4,8 @@
   "private": true,
   "description": "央皿陶瓷 一库多端系统 NestJS 后端",
   "scripts": {
-    "prebuild": "rimraf dist",
+    "postinstall": "prisma generate",
+    "prebuild": "rimraf dist && prisma generate",
     "build": "nest build",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
