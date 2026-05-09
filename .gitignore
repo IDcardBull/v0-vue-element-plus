@@ -14,3 +14,6 @@ certs/
 node_modules
 .next/
 .DS_Store
+
+# Cross-repo working area (contains nested git repos for sister projects)
+.scratch/
