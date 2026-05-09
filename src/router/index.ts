@@ -161,6 +161,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '系统管理' },
         children: [
           {
+            path: 'shipping-template',
+            name: 'SystemShippingTemplate',
+            component: () => import('@/views/system/ShippingTemplate.vue'),
+            meta: { title: '运费模板' },
+          },
+          {
             path: 'account',
             name: 'SystemAccount',
             component: () => import('@/views/system/AccountList.vue'),
