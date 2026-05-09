@@ -80,10 +80,12 @@ const _ = ref<MenuItem | null>(null)
     <!-- 侧边栏 -->
     <el-aside :width="isCollapse ? '64px' : '220px'" class="layout-aside">
       <div class="brand">
-        <div class="brand-logo">央</div>
+        <div class="brand-logo">
+          <img src="/logo.png" alt="央皿" />
+        </div>
         <transition name="fade">
           <div v-if="!isCollapse" class="brand-text">
-            <div class="brand-title">央皿陶瓷</div>
+            <div class="brand-title">央&nbsp;皿</div>
             <div class="brand-subtitle">一库多端管理系统</div>
           </div>
         </transition>
@@ -208,36 +210,41 @@ const _ = ref<MenuItem | null>(null)
 }
 
 .layout-aside {
-  background-color: #1f2d3d;
+  background: linear-gradient(180deg, #1f2d3d 0%, #18222f 100%);
   transition: width 0.25s ease;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.04);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 56px;
-  padding: 0 16px;
+  gap: 12px;
+  height: 64px;
+  padding: 0 18px;
   color: #fff;
-  border-bottom: 1px solid #2b3b52;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
 }
 
 .brand-logo {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, #c8a96a, #a78849);
-  color: #1f2d3d;
-  font-weight: 700;
-  font-size: 18px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #ffffff 0%, #f3ead4 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(200, 169, 106, 0.25);
+  overflow: hidden;
+}
+.brand-logo img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
 }
 
 .brand-text {
@@ -247,51 +254,91 @@ const _ = ref<MenuItem | null>(null)
 }
 
 .brand-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: 1px;
+  letter-spacing: 4px;
+  color: #fff;
 }
 
 .brand-subtitle {
-  font-size: 12px;
+  font-size: 11px;
   color: #8a98a8;
-  margin-top: 2px;
+  margin-top: 4px;
+  letter-spacing: 1px;
 }
 
 .menu-scroll {
   flex: 1;
   overflow: hidden;
+  padding: 8px 10px;
 }
 
 .menu-scroll :deep(.el-menu) {
   border-right: none;
+  background: transparent !important;
+}
+
+.menu-scroll :deep(.el-menu-item),
+.menu-scroll :deep(.el-sub-menu__title) {
+  border-radius: 8px;
+  margin: 2px 0;
+  height: 44px;
+  line-height: 44px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.menu-scroll :deep(.el-menu-item:hover),
+.menu-scroll :deep(.el-sub-menu__title:hover) {
+  background-color: rgba(255, 255, 255, 0.06) !important;
 }
 
 .menu-scroll :deep(.el-menu-item.is-active) {
-  background-color: #2b3b52 !important;
+  background: linear-gradient(90deg, rgba(200, 169, 106, 0.18), rgba(200, 169, 106, 0.04)) !important;
+  position: relative;
+}
+.menu-scroll :deep(.el-menu-item.is-active::before) {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #c8a96a;
+}
+
+.menu-scroll :deep(.el-sub-menu .el-menu) {
+  background: rgba(0, 0, 0, 0.18) !important;
+  border-radius: 8px;
+  margin: 2px 0;
 }
 
 .layout-header {
-  background: #fff;
-  border-bottom: 1px solid var(--ym-border);
-  padding: 0 20px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--ym-border-light);
+  padding: 0 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 56px;
+  height: 60px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 18px;
 }
 
 .collapse-btn {
   cursor: pointer;
   color: var(--ym-text-secondary);
-  padding: 6px;
-  border-radius: 4px;
+  padding: 8px;
+  border-radius: 8px;
   transition: all 0.2s;
 }
 .collapse-btn:hover {
@@ -302,30 +349,36 @@ const _ = ref<MenuItem | null>(null)
 .header-right {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 8px;
 }
 
 .header-icon {
   cursor: pointer;
   color: var(--ym-text-secondary);
-  transition: color 0.2s;
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.2s;
 }
 .header-icon:hover {
   color: var(--ym-primary);
+  background: var(--ym-bg);
 }
 
+.header-badge {
+  margin: 0 4px;
+}
 .header-badge :deep(.el-badge__content) {
-  top: 2px;
-  right: 10px;
+  top: 8px;
+  right: 14px;
 }
 
 .user-trigger {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 6px 10px 6px 6px;
+  border-radius: 999px;
   transition: background 0.2s;
 }
 .user-trigger:hover {
@@ -333,12 +386,13 @@ const _ = ref<MenuItem | null>(null)
 }
 
 .user-name {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--ym-text);
+  font-weight: 500;
 }
 
 .layout-main {
-  padding: 16px;
+  padding: 20px;
   background-color: var(--ym-bg);
   overflow: auto;
 }
