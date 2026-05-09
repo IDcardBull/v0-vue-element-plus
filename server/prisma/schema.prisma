@@ -474,3 +474,22 @@ model Statement {
   @@index([distributorId, status])
   @@map("statements")
 }
+
+// =====================================================================
+// 首页轮播图（零售小程序首页 swiper）
+// PC 后台 /product/home-banner 维护，B2C 小程序 /client/banners 拉取。
+// =====================================================================
+
+model HomeBanner {
+  id        Int      @id @default(autoincrement())
+  title     String   @default("") @db.VarChar(128)
+  imageUrl  String   @map("image_url") @db.VarChar(500)
+  linkUrl   String   @default("") @map("link_url") @db.VarChar(500)
+  sort      Int      @default(0)
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([enabled, sort])
+  @@map("home_banners")
+}

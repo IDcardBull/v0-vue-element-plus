@@ -743,6 +743,48 @@ export class OrderService {
   }
 
   /** 退款：置为售后状态，并把金额/原因写入备注 */
+  /**
+   * 改价（管理员）：在订单未支付前修改总金额。
+   * - 仅 pending_pay 状态可改
+   * - 同时回填 paidAmount 默认值（若未支付则 paidAmount 通常为 0，这里保持一致）
+   * - 改动追加到 remark 字段做轻量审计：[YYYY-MM-DD HH:mm operator] 改价 from->to (reason)
+   */
+  async updateAmount(
+    orderId: bigint | number,
+    nextAmount: number,
+    reason: string | undefined,
+    operator: string,
+  ) {
+    if (!Number.isFinite(nextAmount) || nextAmount < 0) {
+      throw new BadRequestException('价格不合法')
+    }
+    const order = await this.findById(orderId)
+    if (order.status !== 'pending_pay') {
+      throw new BadRequestException('订单状态不允许改价（仅未支付订单可改）')
+    }
+
+    const before = Number(order.totalAmount)
+    const after = Math.round(nextAmount * 100) / 100
+    if (before === after) return order
+
+    const stamp = new Date()
+      .toISOString()
+      .replace('T', ' ')
+      .slice(0, 16)
+    const tail = `[${stamp} ${operator}] 改价 ¥${before.toFixed(2)} -> ¥${after.toFixed(2)}${
+      reason ? ` (${reason})` : ''
+    }`
+    const remark = order.remark ? `${order.remark}\n${tail}` : tail
+
+    return this.prisma.order.update({
+      where: { id: BigInt(orderId) },
+      data: {
+        totalAmount: after,
+        remark,
+      },
+    })
+  }
+
   async refund(orderId: bigint | number, amount?: number, reason?: string) {
     const order = await this.findById(orderId)
     if (!['pending_ship', 'shipped', 'completed'].includes(order.status))
