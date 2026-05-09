@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -23,6 +24,12 @@ import {
 import { Type } from 'class-transformer'
 import { CurrentUser, JwtPayload } from '@/common/decorators/current-user.decorator'
 import { OrderService } from '../order/order.service'
+import { PrismaService } from '@/common/prisma.service'
+import {
+  calcShippingByTemplate,
+  ShippingItemInput,
+  ShippingTemplateLike,
+} from '../shipping-template/shipping-template.calc'
 
 class OrderItemDto {
   @IsInt() skuId: number
@@ -60,13 +67,132 @@ class UpdateAddressDto {
   addressId: number
 }
 
+class PreviewOrderDto {
+  @IsOptional() @IsString()
+  channel?: 'retail' | 'wholesale'
+
+  @IsArray()
+  @ArrayMinSize(1, { message: '商品不能为空' })
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemDto)
+  items: OrderItemDto[]
+
+  /** 用户已选地址 id —— 算运费时按该地址 province 匹配模板特殊地区 / 满额包邮 */
+  @IsOptional() @IsInt()
+  addressId?: number
+}
+
 
 @Controller('client/orders')
 export class ClientOrderController {
-  constructor(private readonly orderSvc: OrderService) {}
+  constructor(
+    private readonly orderSvc: OrderService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   private ensureClient(user: JwtPayload) {
     if (user.userType !== 'client') throw new ForbiddenException('仅小程序用户可下单')
+  }
+
+  /**
+   * 结算页运费试算 —— 不落库，纯计算
+   * 输入：商品列表 + 收货地址 id（可选）
+   * 输出：商品小计、运费、应付、按模板分组的运费明细
+   * 与 createOrder 共用同一份 calcShippingByTemplate，保证下单时金额一致
+   */
+  @Post('preview')
+  async preview(@CurrentUser() user: JwtPayload, @Body() dto: PreviewOrderDto) {
+    this.ensureClient(user)
+    if (!dto.items?.length) throw new BadRequestException('商品不能为空')
+
+    // 取地址省份（没传地址 → 用默认地址；都没有 → null，按全国默认规则）
+    let province: string | null = null
+    if (dto.addressId) {
+      const addr = await this.prisma.address.findFirst({
+        where: { id: Number(dto.addressId), userId: user.sub },
+      })
+      if (!addr) throw new BadRequestException('地址不存在')
+      province = addr.province
+    } else {
+      const def = await this.prisma.address.findFirst({
+        where: { userId: user.sub, isDefault: true },
+      })
+      province = def?.province || null
+    }
+
+    const channel = dto.channel === 'wholesale' ? 'wholesale' : 'retail'
+
+    let totalAmount = 0
+    let legacyMaxFee = 0
+    let legacyAllFree = true
+    let legacyHasItem = false
+    const templateGroups = new Map<
+      number,
+      { template: ShippingTemplateLike; items: ShippingItemInput[]; templateName: string }
+    >()
+
+    for (const it of dto.items) {
+      const sku = await this.prisma.sku.findUnique({
+        where: { id: Number(it.skuId) },
+        include: { product: { include: { shippingTemplate: true } } },
+      })
+      if (!sku) throw new BadRequestException(`SKU ${it.skuId} 不存在`)
+      const product: any = sku.product
+      // 价格：批发渠道用阶梯价首档，零售用 SKU 售价
+      const unitPrice =
+        channel === 'wholesale'
+          ? Number(sku.wholesalePrice ?? sku.price ?? 0)
+          : Number(sku.price ?? 0)
+      const qty = Math.max(1, Number(it.qty) || 1)
+      const subtotal = unitPrice * qty
+      totalAmount += subtotal
+
+      if (product.shippingTemplate) {
+        const tpl: ShippingTemplateLike = product.shippingTemplate
+        const group = templateGroups.get(tpl.id) || {
+          template: tpl,
+          items: [],
+          templateName: (product.shippingTemplate as any).name,
+        }
+        group.items.push({
+          qty,
+          weight: sku.weight == null ? 0 : Number(sku.weight),
+          subtotal,
+        })
+        templateGroups.set(tpl.id, group)
+      } else {
+        legacyHasItem = true
+        const free = product.freeShipping === true
+        const fee = Number(product.shippingFee || 0)
+        if (!free) {
+          legacyAllFree = false
+          if (fee > legacyMaxFee) legacyMaxFee = fee
+        }
+      }
+    }
+
+    const breakdown: Array<{ templateId: number | null; templateName: string; freight: number }> =
+      []
+    let templateFreight = 0
+    for (const [tplId, { template, items, templateName }] of templateGroups.entries()) {
+      const f = calcShippingByTemplate(template, items, province)
+      templateFreight += f
+      breakdown.push({ templateId: tplId, templateName, freight: f })
+    }
+    const legacyFreight = legacyHasItem ? (legacyAllFree ? 0 : legacyMaxFee) : 0
+    if (legacyHasItem) {
+      breakdown.push({ templateId: null, templateName: '默认运费', freight: legacyFreight })
+    }
+    const freight = Math.round((templateFreight + legacyFreight) * 100) / 100
+    const payAmount = Math.round((totalAmount + freight) * 100) / 100
+
+    return {
+      totalAmount: Math.round(totalAmount * 100) / 100,
+      freight,
+      payAmount,
+      province, // 让前端知道按哪个省算的
+      breakdown, // 给前端可选展示「按模板分组的运费」
+    }
   }
 
   /**
