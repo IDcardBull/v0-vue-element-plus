@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage, type UploadRequestOptions } from 'element-plus'
-import { ArrowLeft, Plus } from '@element-plus/icons-vue'
+import { computed, onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox, type UploadRequestOptions } from 'element-plus'
+import {
+  Bottom,
+  Delete as DeleteIcon,
+  Picture,
+  Plus,
+  Refresh,
+  Top,
+} from '@element-plus/icons-vue'
 import { homeApi, type HomeBanner } from '@/api/home'
 import { uploadApi } from '@/api/upload'
 
@@ -15,11 +21,12 @@ interface BannerFormItem extends HomeBanner {
   enabled: boolean
 }
 
-const router = useRouter()
 const bannerLoading = ref(false)
 const bannerSaving = ref(false)
 const bannerUploadingIndex = ref<number | null>(null)
 const banners = ref<BannerFormItem[]>([])
+
+const enabledCount = computed(() => banners.value.filter((b) => b.enabled).length)
 
 function normalizeBanner(item: HomeBanner, index: number): BannerFormItem {
   return {
@@ -45,19 +52,55 @@ async function loadBanners() {
   }
 }
 
+function nextSort() {
+  if (banners.value.length === 0) return 1
+  return Math.max(...banners.value.map((b) => Number(b.sort) || 0)) + 1
+}
+
 function addBanner() {
   banners.value.push({
     id: `local-${Date.now()}`,
     title: '',
     imageUrl: '',
     linkUrl: '',
-    sort: banners.value.length + 1,
+    sort: nextSort(),
     enabled: true,
   })
 }
 
-function removeBanner(index: number) {
+async function removeBanner(index: number) {
+  const target = banners.value[index]
+  if (!target) return
+  // 已上传过图片的需要二次确认，纯空行直接删
+  if (target.imageUrl) {
+    try {
+      await ElMessageBox.confirm(
+        `确认删除${target.title ? `「${target.title}」` : '这张轮播图'}？`,
+        '删除轮播图',
+        { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+      )
+    } catch {
+      return
+    }
+  }
   banners.value.splice(index, 1)
+  reflowSort()
+}
+
+function moveBanner(index: number, delta: -1 | 1) {
+  const target = index + delta
+  if (target < 0 || target >= banners.value.length) return
+  const arr = banners.value.slice()
+  ;[arr[index], arr[target]] = [arr[target], arr[index]]
+  banners.value = arr
+  reflowSort()
+}
+
+/** 调整后按当前数组顺序重写 sort，避免运营手动改数字 */
+function reflowSort() {
+  banners.value.forEach((b, i) => {
+    b.sort = i + 1
+  })
 }
 
 function validateBannerImage(file: File) {
@@ -98,16 +141,19 @@ function createBannerUploadHandler(index: number) {
 }
 
 async function saveBanners() {
-  const invalid = banners.value.find((item) => !item.imageUrl)
-  if (invalid) {
-    ElMessage.error('请先上传所有轮播图图片')
+  const invalidIdx = banners.value.findIndex((item) => !item.imageUrl)
+  if (invalidIdx >= 0) {
+    ElMessage.error(`第 ${invalidIdx + 1} 项还没上传图片`)
     return
   }
+  reflowSort()
   bannerSaving.value = true
   try {
-    const payload = banners.value.map(({ id, ...item }) => ({
+    const payload = banners.value.map(({ id, ...item }, idx) => ({
+      // 只把真正来自后端的数字 id 上送，本地占位 id 丢掉让后端走 create 分支
+      ...(typeof id === 'number' ? { id } : {}),
       ...item,
-      sort: Number(item.sort) || 0,
+      sort: Number(item.sort) || idx + 1,
     }))
     await homeApi.saveBanners(payload)
     ElMessage.success('首页轮播图已保存')
@@ -117,10 +163,6 @@ async function saveBanners() {
   }
 }
 
-function goBack() {
-  router.push('/product/retail')
-}
-
 onMounted(loadBanners)
 </script>
 
@@ -128,27 +170,48 @@ onMounted(loadBanners)
   <div class="home-banner-page">
     <div class="page-header">
       <div class="header-left">
-        <el-button :icon="ArrowLeft" text @click="goBack">返回</el-button>
-        <el-divider direction="vertical" />
-        <div>
-          <h2 class="page-title">首页轮播图设置</h2>
-          <div class="page-desc">用于小程序首页顶部轮播，接口：/api/home/banners</div>
+        <h2 class="page-title">零售首页轮播</h2>
+        <div class="page-desc">
+          B2C 小程序首页顶部 swiper · 建议比例 4:3（1200×900）·
+          已启用 <span class="strong">{{ enabledCount }}</span> / 共 {{ banners.length }} 张
         </div>
       </div>
       <div class="header-actions">
-        <el-button :icon="'RefreshLeft'" @click="loadBanners">刷新</el-button>
+        <el-button :icon="Refresh" @click="loadBanners">刷新</el-button>
         <el-button type="primary" :icon="Plus" @click="addBanner">新增轮播图</el-button>
         <el-button type="success" :loading="bannerSaving" @click="saveBanners">保存设置</el-button>
       </div>
     </div>
 
     <el-card shadow="never" class="banner-card" v-loading="bannerLoading">
-      <el-empty v-if="banners.length === 0" description="暂无轮播图">
+      <el-empty v-if="banners.length === 0" description="暂无轮播图，新增第一张试试">
         <el-button type="primary" :icon="Plus" @click="addBanner">新增轮播图</el-button>
       </el-empty>
 
       <div v-else class="banner-list">
         <div v-for="(banner, index) in banners" :key="banner.id" class="banner-item">
+          <div class="banner-index">
+            <span class="index-num">{{ index + 1 }}</span>
+            <div class="index-tools">
+              <el-button
+                size="small"
+                text
+                :icon="Top"
+                :disabled="index === 0"
+                @click="moveBanner(index, -1)"
+                title="上移"
+              />
+              <el-button
+                size="small"
+                text
+                :icon="Bottom"
+                :disabled="index === banners.length - 1"
+                @click="moveBanner(index, 1)"
+                title="下移"
+              />
+            </div>
+          </div>
+
           <el-upload
             class="banner-upload"
             :show-file-list="false"
@@ -159,20 +222,27 @@ onMounted(loadBanners)
             <div class="banner-image-box">
               <img v-if="banner.imageUrl" :src="banner.imageUrl" alt="轮播图" />
               <div v-else class="banner-image-placeholder">
-                <el-icon><Plus /></el-icon>
-                <span>{{ bannerUploadingIndex === index ? '上传中...' : '上传图片' }}</span>
+                <el-icon><Picture /></el-icon>
+                <span>{{ bannerUploadingIndex === index ? '上传中…' : '点击上传图片' }}</span>
+                <span class="hint">建议 4:3，≤ 5MB</span>
               </div>
               <div v-if="banner.imageUrl" class="banner-image-mask">点击更换</div>
             </div>
           </el-upload>
 
           <div class="banner-form">
-            <el-input v-model="banner.title" placeholder="轮播标题" />
-            <el-input v-model="banner.linkUrl" placeholder="跳转链接，如 /pages/product/detail?id=1" />
+            <el-input v-model="banner.title" placeholder="轮播标题（仅后台展示，可空）" maxlength="30" show-word-limit />
+            <el-input v-model="banner.linkUrl" placeholder="点击跳转，例：/pages/detail/detail?id=1（留空则不跳转）" />
             <div class="banner-form-row">
-              <el-input-number v-model="banner.sort" :min="0" controls-position="right" placeholder="排序" />
-              <el-switch v-model="banner.enabled" active-text="启用" inactive-text="停用" inline-prompt />
-              <el-button type="danger" plain @click="removeBanner(index)">删除</el-button>
+              <el-switch
+                v-model="banner.enabled"
+                active-text="启用"
+                inactive-text="停用"
+                inline-prompt
+              />
+              <el-tag v-if="!banner.enabled" type="info" size="small">客户端不显示</el-tag>
+              <span class="spacer" />
+              <el-button type="danger" plain :icon="DeleteIcon" @click="removeBanner(index)">删除</el-button>
             </div>
           </div>
         </div>
@@ -199,14 +269,17 @@ onMounted(loadBanners)
   border: 1px solid var(--ym-border);
 }
 
-.header-left,
+.header-left {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .header-actions {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.header-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -219,9 +292,13 @@ onMounted(loadBanners)
 }
 
 .page-desc {
-  margin-top: 4px;
   font-size: 12px;
   color: var(--ym-text-secondary);
+}
+
+.page-desc .strong {
+  color: var(--ym-primary);
+  font-weight: 600;
 }
 
 .banner-card :deep(.el-card__body) {
@@ -230,7 +307,7 @@ onMounted(loadBanners)
 
 .banner-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
   gap: 16px;
 }
 
@@ -243,6 +320,32 @@ onMounted(loadBanners)
   background: #fafbfc;
 }
 
+.banner-index {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.index-num {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--ym-primary);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.index-tools {
+  display: flex;
+  flex-direction: column;
+}
+
 .banner-upload,
 .banner-upload :deep(.el-upload) {
   display: block;
@@ -252,7 +355,7 @@ onMounted(loadBanners)
 .banner-image-box {
   position: relative;
   width: 200px;
-  height: 106px;
+  height: 150px; /* 4:3 */
   border: 1px dashed #dcdfe6;
   border-radius: 6px;
   overflow: hidden;
@@ -274,13 +377,18 @@ onMounted(loadBanners)
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   color: #909399;
   font-size: 12px;
 }
 
 .banner-image-placeholder .el-icon {
-  font-size: 22px;
+  font-size: 26px;
+}
+
+.banner-image-placeholder .hint {
+  font-size: 11px;
+  color: #c0c4cc;
 }
 
 .banner-image-mask {
@@ -313,5 +421,9 @@ onMounted(loadBanners)
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.banner-form-row .spacer {
+  flex: 1;
 }
 </style>
