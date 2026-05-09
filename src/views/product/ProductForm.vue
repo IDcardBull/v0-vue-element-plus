@@ -6,6 +6,7 @@ import { Plus, Delete, ArrowLeft } from '@element-plus/icons-vue'
 import { uploadApi } from '@/api/upload'
 import { productApi } from '@/api/product'
 import { categoryApi } from '@/api/category'
+import { shippingTemplateApi, type ShippingTemplate } from '@/api/shippingTemplate'
 
 /* ----------------------------------- 类型 ---------------------------------- */
 interface SpecValue {
@@ -43,10 +44,12 @@ interface ProductFormModel {
   gallery: string[]
   description: string
   status: 'on' | 'off' | 'draft'
-  /** 是否包邮（true 时忽略运费） */
+  /** 是否包邮（仅未选运费模板时生效） */
   free_shipping: boolean
-  /** 默认运费（元）。结合用户地址做远近分区运费时再扩展运费模板 */
+  /** 默认运费（元，仅未选运费模板时生效） */
   shipping_fee: number | null
+  /** 关联的运费模板 id，0/null 表示未选 */
+  shipping_template_id: number | null
 }
 
 /* ----------------------------------- 路由 ---------------------------------- */
@@ -75,7 +78,20 @@ const form = reactive<ProductFormModel>({
   status: 'draft',
   free_shipping: false,
   shipping_fee: 0,
+  shipping_template_id: null,
 })
+
+/* ------------------------------- 运费模板选项 ------------------------------ */
+const shippingTemplateOptions = ref<ShippingTemplate[]>([])
+async function loadShippingTemplates() {
+  try {
+    const list = await shippingTemplateApi.list()
+    shippingTemplateOptions.value = Array.isArray(list) ? list : []
+  } catch (err) {
+    console.warn('[ProductForm] 加载运费模板失败', err)
+    shippingTemplateOptions.value = []
+  }
+}
 
 const rules: FormRules<ProductFormModel> = {
   name: [{ required: true, message: '请输入商品名称', trigger: 'blur' }],
@@ -386,9 +402,11 @@ async function loadProductDetail() {
       gallery: normalizeImageList(item.images),
       description: item.detail || '',
       status: item.status === 1 ? 'on' : 'draft',
-      free_shipping: item.freeShipping === true,
-      shipping_fee: item.shippingFee == null ? 0 : Number(item.shippingFee),
-    })
+    free_shipping: item.freeShipping === true,
+    shipping_fee: item.shippingFee == null ? 0 : Number(item.shippingFee),
+    shipping_template_id:
+      item.shippingTemplateId == null ? null : Number(item.shippingTemplateId),
+  })
     fillSkuList(item.skus || [])
   } catch (error) {
     ElMessage.error('商品详情加载失败')
@@ -411,6 +429,11 @@ function buildProductPayload(status: 'on' | 'draft') {
     retailPrice: Number(skuList.value.find((s) => s.enabled)?.retail_price || 0),
     wholesaleEnabled,
     minWholesaleQty: minQty,
+    // 物流：优先模板；模板为空时再用包邮/默认运费
+    shippingTemplateId:
+      form.shipping_template_id && Number(form.shipping_template_id) > 0
+        ? Number(form.shipping_template_id)
+        : null,
     freeShipping: !!form.free_shipping,
     shippingFee: form.free_shipping ? 0 : Number(form.shipping_fee || 0),
     status: status === 'on' ? 1 : 0,
@@ -481,7 +504,7 @@ async function handleSubmit(status: 'on' | 'draft') {
 }
 
 function handleCancel() {
-  ElMessageBox.confirm('确定要放弃当前编辑吗？未保存的内容将丢失。', '提示', {
+  ElMessageBox.confirm('确定要放弃当前编���吗？未保存的内容将丢失。', '提示', {
     confirmButtonText: '放弃',
     cancelButtonText: '继续编辑',
     type: 'warning',
@@ -492,7 +515,7 @@ function handleCancel() {
 
 /* --------------------------------- 编辑回填 -------------------------------- */
 onMounted(async () => {
-  await loadOptions()
+  await Promise.all([loadOptions(), loadShippingTemplates()])
   if (isEdit.value) {
     await loadProductDetail()
   } else {
@@ -611,14 +634,35 @@ onMounted(async () => {
             </el-form-item>
           </el-col>
           <el-col :span="8">
+            <el-form-item label="运费模板">
+              <el-select
+                v-model="form.shipping_template_id"
+                placeholder="不使用模板（按下方包邮/默认运费）"
+                clearable
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="tpl in shippingTemplateOptions"
+                  :key="tpl.id"
+                  :value="tpl.id"
+                  :label="`${tpl.name} (${tpl.calcType === 2 ? '按重量' : '按件'})`"
+                />
+              </el-select>
+              <div class="form-tip">
+                选了模板后将按模板内的默认/特殊地区/满额包邮规则计算运费，下方两项失效。
+              </div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
             <el-form-item label="是否包邮">
               <el-switch
                 v-model="form.free_shipping"
                 active-text="包邮"
                 inactive-text="按运费"
                 inline-prompt
+                :disabled="!!form.shipping_template_id"
               />
-              <div class="form-tip">开启后忽略默认运费；可在订单结算时按用户地址再做远近调整。</div>
+              <div class="form-tip">未选运费模板时生效；开启后忽略默认运费。</div>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -628,8 +672,8 @@ onMounted(async () => {
                 :min="0"
                 :precision="2"
                 :controls="false"
-                :disabled="form.free_shipping"
-                placeholder="不包邮时收取的默认运费"
+                :disabled="form.free_shipping || !!form.shipping_template_id"
+                placeholder="未选模板且不包邮时收取"
                 style="width: 100%"
               />
             </el-form-item>
