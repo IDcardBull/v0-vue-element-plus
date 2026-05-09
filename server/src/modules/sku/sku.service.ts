@@ -55,6 +55,38 @@ export class SkuService {
   }
 
   /**
+   * 更新 SKU 售价
+   * 仅操作 SKU 表自身的 retailPrice / memberPrice；
+   * 批发阶梯价由 priceTier 模块单独维护，避免和阶梯档冲突。
+   */
+  async updatePrice(
+    id: number,
+    payload: { retailPrice?: number; memberPrice?: number },
+  ) {
+    const sku = await this.prisma.sku.findUnique({ where: { id }, select: { id: true } })
+    if (!sku) throw new NotFoundException('SKU 不存在')
+
+    const data: { retailPrice?: number; memberPrice?: number | null } = {}
+    if (payload.retailPrice != null) {
+      const v = Number(payload.retailPrice)
+      if (!isFinite(v) || v < 0) throw new NotFoundException('零售价无效')
+      data.retailPrice = v
+    }
+    if (payload.memberPrice !== undefined) {
+      // 允许传 null/0 清掉会员价
+      const v = payload.memberPrice == null ? null : Number(payload.memberPrice)
+      if (v != null && (!isFinite(v) || v < 0)) throw new NotFoundException('会员价无效')
+      data.memberPrice = v
+    }
+    if (Object.keys(data).length === 0) {
+      // 没有要改的字段，直接返回当前值
+      return this.findById(id)
+    }
+    await this.prisma.sku.update({ where: { id }, data })
+    return this.findById(id)
+  }
+
+  /**
    * 更新 SKU 库存：写入默认仓库的 Stock.onHand
    */
   async updateStock(id: number, stock: number) {
