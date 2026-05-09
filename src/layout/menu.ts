@@ -22,6 +22,7 @@ export const menuData: MenuItem[] = [
     children: [
       { index: '/product/manage', title: '管理商品', icon: 'Goods' },
       { index: '/product/category', title: '分类管理', icon: 'Collection' },
+      { index: '/product/retail-banners', title: '零售首页轮播', icon: 'Picture' },
     ],
   },
   {
