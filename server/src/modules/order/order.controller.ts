@@ -30,6 +30,11 @@ class RefundDto {
   @IsOptional() reason?: string
 }
 
+class UpdateAmountDto {
+  @IsNotEmpty() totalAmount!: number
+  @IsOptional() reason?: string
+}
+
 class CreateOrderDto {
   @IsNotEmpty() channel: 'retail' | 'wholesale'
   @IsArray() items: Array<{ skuId: number; qty: number }>
@@ -121,6 +126,25 @@ export class OrderController {
   @Post(':id/refund')
   refund(@Param('id', ParseIntPipe) id: number, @Body() dto: RefundDto) {
     return this.svc.refund(id, dto.amount, dto.reason)
+  }
+
+  // 改价：仅在订单尚未支付（pending_pay）时允许改总金额
+  @Patch(':id/amount')
+  updateAmount(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateAmountDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.svc.updateAmount(id, Number(dto.totalAmount), dto.reason, user.username)
+  }
+
+  @Post(':id/amount')
+  updateAmountPost(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateAmountDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.svc.updateAmount(id, Number(dto.totalAmount), dto.reason, user.username)
   }
 
   // 客户端入口 —— 小程序/H5 下单走这里

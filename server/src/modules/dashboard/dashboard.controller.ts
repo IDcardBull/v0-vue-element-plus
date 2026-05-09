@@ -9,8 +9,8 @@ export class DashboardController {
   constructor(private dashboardService: DashboardService) {}
 
   @Get('overview')
-  overview() {
-    return this.dashboardService.overview()
+  overview(@Query('channel') channel?: string) {
+    return this.dashboardService.overview(channel)
   }
 
   @Get('sales-trend')
