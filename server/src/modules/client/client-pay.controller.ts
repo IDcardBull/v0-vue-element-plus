@@ -7,13 +7,8 @@ import {
   Param,
   ParseIntPipe,
   Post,
-  RawBodyRequest,
-  Req,
-  Res,
 } from '@nestjs/common'
-import { Request, Response } from 'express'
 import { CurrentUser, JwtPayload } from '@/common/decorators/current-user.decorator'
-import { Public } from '@/common/decorators/public.decorator'
 import { PrismaService } from '@/common/prisma.service'
 import { OrderService } from '../order/order.service'
 import { WechatPayService } from './wechat-pay.service'
@@ -65,33 +60,84 @@ export class ClientPayController {
   }
 
   /**
-   * 微信支付结果回调
-   * - 无需登录（微信服务器直接调用），使用 @Public
-   * - 使用 @Res 绕过 ResponseInterceptor，直接按微信规范返回
-   * - 需要原始 body（rawBody）用于验签/解密
+   * 主动同步支付状态（前端在 wx.requestPayment 成功回调里调用）
+   *
+   * 业务背景：微信异步 notify 在以下场景常常推不到 / 推迟到达：
+   *   - 开发环境 notify_url 不是公网 https
+   *   - notify_url 配置错、平台证书过期
+   *   - 公网偶发抖动（通常重试，但用户已经站在结果页等结果）
+   *
+   * 解决：用户付完款一定会回到小程序，前端调一次本接口，后端用商户证书
+   * 主动 GET https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no/{orderNo}
+   * 拿真实 trade_state；为 SUCCESS 就直接 markPaid。这样**不依赖** notify
+   * 也能让用户立刻看到"已支付"。
+   *
+   * 幂等：内部走 markPaid（仅 status=pending_pay 时才更新），
+   * 用户多次刷新都不会重复处理。
    */
-  @Public()
-  @Post('notify')
-  async notify(@Req() req: RawBodyRequest<Request>, @Res() res: Response) {
-    const rawBody = req.rawBody?.toString('utf8') || ''
-    try {
-      const result = this.wxpay.decryptNotify(req.headers, rawBody)
-      this.logger.log(`[WxPay] 回调 ${result.out_trade_no} → ${result.trade_state}`)
+  @Post('orders/:id/sync')
+  async sync(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    if (user.userType !== 'client') throw new ForbiddenException('仅小程序用户可同步支付')
 
-      if (result.trade_state === 'SUCCESS') {
-        // 订单号 → id
-        const order = await this.prisma.order.findUnique({
-          where: { orderNo: result.out_trade_no },
-        })
-        if (order && order.status === 'pending_pay') {
-          await this.orderSvc.markPaid(order.id, result.transaction_id)
+    const order = await this.orderSvc.findById(id)
+    if (order.userId !== user.sub) throw new NotFoundException('订单不存在')
+
+    // 已经是支付后状态：直接返回，避免去微信查询白做一次
+    if (order.status !== 'pending_pay') {
+      return {
+        status: order.status,
+        paid: order.status !== 'pending_pay' && order.status !== 'cancelled',
+        tradeState: 'SUCCESS',
+        message: '订单已处于支付后状态',
+      }
+    }
+
+    const result = await this.wxpay.queryOrderByOutTradeNo(order.orderNo)
+    this.logger.log(
+      `[WxPay/Sync] order=${order.orderNo} trade_state=${result.trade_state} tx=${result.transaction_id || ''}`,
+    )
+
+    if (result.trade_state === 'SUCCESS') {
+      // 二次校验金额（防止极端伪造）
+      if (result.amount?.total != null) {
+        const expectedFen = Math.round(Number(order.totalAmount) * 100)
+        if (Number(result.amount.total) !== expectedFen) {
+          this.logger.error(
+            `[WxPay/Sync] 金额不一致 order=${order.orderNo} expected=${expectedFen} actual=${result.amount.total}`,
+          )
+          throw new BadRequestException('支付金额与订单不一致，请联系客服')
         }
       }
-      // 微信要求 200 + 固定 JSON
-      res.status(200).json({ code: 'SUCCESS', message: '成功' })
-    } catch (e) {
-      this.logger.error('[WxPay] 回调处理失败', (e as Error).stack)
-      res.status(500).json({ code: 'FAIL', message: (e as Error).message })
+      try {
+        await this.orderSvc.markPaid(order.id, result.transaction_id)
+      } catch (err: any) {
+        // 与 notify 并发触发的幂等冲突：忽略
+        this.logger.warn(`[WxPay/Sync] markPaid 幂等冲突: ${err?.message || err}`)
+      }
+      return {
+        status: 'pending_ship',
+        paid: true,
+        tradeState: result.trade_state,
+        transactionId: result.transaction_id,
+        message: '支付成功',
+      }
+    }
+
+    // 中间状态：USERPAYING（需轮询）/ NOTPAY（用户未付）/ CLOSED（订单关闭）/ PAYERROR
+    return {
+      status: order.status,
+      paid: false,
+      tradeState: result.trade_state,
+      tradeStateDesc: result.trade_state_desc,
+      message:
+        result.trade_state === 'USERPAYING'
+          ? '用户支付中，请稍候再试'
+          : result.trade_state === 'NOTPAY'
+            ? '用户尚未完成支付'
+            : result.trade_state_desc || '支付未成功',
     }
   }
 }
