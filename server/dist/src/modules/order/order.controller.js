@@ -78,6 +78,16 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
 ], RefundDto.prototype, "reason", void 0);
+class UpdateAmountDto {
+}
+__decorate([
+    (0, class_validator_1.IsNotEmpty)(),
+    __metadata("design:type", Number)
+], UpdateAmountDto.prototype, "totalAmount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], UpdateAmountDto.prototype, "reason", void 0);
 class CreateOrderDto {
 }
 __decorate([
@@ -160,6 +170,13 @@ let OrderController = class OrderController {
     }
     refund(id, dto) {
         return this.svc.refund(id, dto.amount, dto.reason);
+    }
+    // 改价：仅在订单尚未支付（pending_pay）时允许改总金额
+    updateAmount(id, dto, user) {
+        return this.svc.updateAmount(id, Number(dto.totalAmount), dto.reason, user.username);
+    }
+    updateAmountPost(id, dto, user) {
+        return this.svc.updateAmount(id, Number(dto.totalAmount), dto.reason, user.username);
     }
     // 客户端入口 —— 小程序/H5 下单走这里
     clientCreate(user, dto) {
@@ -267,6 +284,24 @@ __decorate([
     __metadata("design:paramtypes", [Number, RefundDto]),
     __metadata("design:returntype", void 0)
 ], OrderController.prototype, "refund", null);
+__decorate([
+    (0, common_1.Patch)(':id/amount'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, UpdateAmountDto, Object]),
+    __metadata("design:returntype", void 0)
+], OrderController.prototype, "updateAmount", null);
+__decorate([
+    (0, common_1.Post)(':id/amount'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, UpdateAmountDto, Object]),
+    __metadata("design:returntype", void 0)
+], OrderController.prototype, "updateAmountPost", null);
 __decorate([
     (0, common_1.Post)('client/create'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),

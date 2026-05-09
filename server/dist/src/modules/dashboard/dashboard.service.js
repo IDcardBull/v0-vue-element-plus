@@ -33,7 +33,8 @@ let DashboardService = class DashboardService {
         low += noStockCount;
         return low;
     }
-    async overview() {
+    async overview(channel) {
+        const channelFilter = channel === 'wholesale' || channel === 'retail' ? channel : undefined;
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
         const todayEnd = new Date();
@@ -48,14 +49,28 @@ let DashboardService = class DashboardService {
             // 分销商：待审核
             this.prisma.distributor.count({ where: { auditStatus: 'pending' } }),
             // 今日订单数
-            this.prisma.order.count({ where: { createdAt: { gte: todayStart, lte: todayEnd } } }),
+            this.prisma.order.count({
+                where: {
+                    createdAt: { gte: todayStart, lte: todayEnd },
+                    ...(channelFilter ? { channel: channelFilter } : {}),
+                },
+            }),
             // 今日已付金额：paidAt 非空
             this.prisma.order.aggregate({
-                where: { createdAt: { gte: todayStart, lte: todayEnd }, paidAt: { not: null } },
+                where: {
+                    createdAt: { gte: todayStart, lte: todayEnd },
+                    paidAt: { not: null },
+                    ...(channelFilter ? { channel: channelFilter } : {}),
+                },
                 _sum: { paidAmount: true },
             }),
             // 待发货：已付款但未发货
-            this.prisma.order.count({ where: { status: 'pending_ship' } }),
+            this.prisma.order.count({
+                where: {
+                    status: 'pending_ship',
+                    ...(channelFilter ? { channel: channelFilter } : {}),
+                },
+            }),
             // 低库存 SKU：跨仓库聚合 onHand <= 20 的 SKU 个数（库存唯一真源是 Stock 表）
             this.computeLowStockCount(20),
         ]);
