@@ -126,6 +126,7 @@ export class ClientOrderController {
     let legacyMaxFee = 0
     let legacyAllFree = true
     let legacyHasItem = false
+    const legacyProductNames: string[] = [] // 没挂模板的商品名
     const templateGroups = new Map<
       number,
       { template: ShippingTemplateLike; items: ShippingItemInput[]; templateName: string }
@@ -162,6 +163,7 @@ export class ClientOrderController {
         templateGroups.set(tpl.id, group)
       } else {
         legacyHasItem = true
+        legacyProductNames.push(product.name)
         const free = product.freeShipping === true
         const fee = Number(product.shippingFee || 0)
         if (!free) {
@@ -171,18 +173,48 @@ export class ClientOrderController {
       }
     }
 
-    const breakdown: Array<{ templateId: number | null; templateName: string; freight: number }> =
-      []
+    /**
+     * breakdown 给前端展示：每条都附带 reason，方便定位"为啥是 0 元"
+     *   - 'template'         按模板算出的运费（>0 也回传 reason='template'）
+     *   - 'free_shipping'    模板满额包邮命中
+     *   - 'no_first_rule'    模板默认规则 firstAmount/firstPrice=0
+     *   - 'legacy'           商品未挂模板，走老 freeShipping/shippingFee
+     *   - 'legacy_all_free'  商品未挂模板且全部 freeShipping=true
+     */
+    const breakdown: Array<{
+      templateId: number | null
+      templateName: string
+      freight: number
+      reason: string
+    }> = []
+
     let templateFreight = 0
     for (const [tplId, { template, items, templateName }] of templateGroups.entries()) {
       const f = calcShippingByTemplate(template, items, province)
       templateFreight += f
-      breakdown.push({ templateId: tplId, templateName, freight: f })
+      let reason = 'template'
+      if (f === 0) {
+        const def: any = template.defaultRule || {}
+        const firstAmount = Number(def.firstAmount) || 0
+        const firstPrice = Number(def.firstPrice) || 0
+        if (template.freeShippingEnabled) reason = 'free_shipping'
+        else if (firstAmount <= 0 || firstPrice <= 0) reason = 'no_first_rule'
+      }
+      breakdown.push({ templateId: tplId, templateName, freight: f, reason })
     }
+
     const legacyFreight = legacyHasItem ? (legacyAllFree ? 0 : legacyMaxFee) : 0
     if (legacyHasItem) {
-      breakdown.push({ templateId: null, templateName: '默认运费', freight: legacyFreight })
+      breakdown.push({
+        templateId: null,
+        templateName: legacyProductNames.length
+          ? `未配模板：${legacyProductNames.slice(0, 3).join('、')}${legacyProductNames.length > 3 ? '…' : ''}`
+          : '默认运费',
+        freight: legacyFreight,
+        reason: legacyAllFree ? 'legacy_all_free' : 'legacy',
+      })
     }
+
     const freight = Math.round((templateFreight + legacyFreight) * 100) / 100
     const payAmount = Math.round((totalAmount + freight) * 100) / 100
 
@@ -191,7 +223,7 @@ export class ClientOrderController {
       freight,
       payAmount,
       province, // 让前端知道按哪个省算的
-      breakdown, // 给前端可选展示「按模板分组的运费」
+      breakdown, // 给前端可选展示「按模板分组的运费」+ 每段为何是 0
     }
   }
 

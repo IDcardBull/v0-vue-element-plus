@@ -648,7 +648,19 @@ onMounted(async () => {
                   :label="`${tpl.name} (${tpl.calcType === 2 ? '按重量' : '按件'})`"
                 />
               </el-select>
-              <div class="form-tip">
+              <!-- 没挂模板 + 没勾包邮 + 默认运费=0 → 按业务实际等同于"未配置"，
+                   零售下单时会因为没有可计算的运费规则被算作 0 元，提前红字提示运营 -->
+              <div
+                v-if="
+                  !form.shipping_template_id &&
+                  !form.free_shipping &&
+                  Number(form.shipping_fee || 0) === 0
+                "
+                class="form-tip form-tip--warn"
+              >
+                ⚠ 当前未挂运费模板，且默认运费为 0，零售下单将不收取运费。
+              </div>
+              <div v-else class="form-tip">
                 选了模板后将按模板内的默认/特殊地区/满额包邮规则计算运费，下方两项失效。
               </div>
             </el-form-item>
@@ -1158,5 +1170,11 @@ onMounted(async () => {
   justify-content: flex-end;
   gap: 8px;
   z-index: 10;
+}
+
+/* 运费未配置时的警告提示——保持基础结构跟 .form-tip 一致，仅换色 */
+.form-tip--warn {
+  color: var(--el-color-danger, #f56c6c);
+  font-weight: 500;
 }
 </style>

@@ -40,6 +40,14 @@ export interface ProductManageItem {
   wholesale_sales_30d: number
   stock_available: number
   stock_warning: number
+  /** 关联的运费模板 id（null = 未挂模板，零售下单将走 freeShipping/shippingFee 兜底） */
+  shipping_template_id: number | null
+  /** 模板名称，便于在表格里显示 */
+  shipping_template_name: string
+  /** 未挂模板时：是否标记为整单包邮 */
+  free_shipping: boolean
+  /** 未挂模板时：商品默认运费（元） */
+  shipping_fee: number
 }
 
 interface SkuInfo {
@@ -102,6 +110,11 @@ async function loadList() {
         wholesale_sales_30d: Number(r.wholesaleSales30d ?? r.monthlyAmount ?? 0),
         stock_available: Number(sku.stock ?? sku.stockAvailable ?? 0),
         stock_warning: Number(sku.stockWarning ?? 20),
+        shipping_template_id:
+          r.shippingTemplateId == null ? null : Number(r.shippingTemplateId),
+        shipping_template_name: r.shippingTemplate?.name || '',
+        free_shipping: r.freeShipping === true,
+        shipping_fee: Number(r.shippingFee || 0),
       }
     })
   } catch (e: any) {
@@ -443,6 +456,46 @@ function levelTagType(l: DealerLevel) {
             <span class="stock" :class="{ warning: row.stock_available < row.stock_warning }">
               {{ row.stock_available }}
             </span>
+          </template>
+        </el-table-column>
+
+        <!--
+          运费来源：
+          1. 挂了模板 → 显示模板名称（绿色 success tag）
+          2. 没模板但 freeShipping=true → 显示"包邮"灰色 tag
+          3. 没模板且 shippingFee > 0 → 显示"¥X 默认运费"info tag
+          4. 都没有 → 红色 danger tag「未配置」+ 提示去编辑挂模板
+          运营在这一列就能一眼看出"为什么零售下单 0 元运费"
+        -->
+        <el-table-column label="运费配置" width="150" align="center">
+          <template #default="{ row }">
+            <el-tag
+              v-if="row.shipping_template_id"
+              type="success"
+              effect="plain"
+              size="small"
+            >
+              {{ row.shipping_template_name || '已挂模板' }}
+            </el-tag>
+            <el-tag
+              v-else-if="row.free_shipping"
+              type="info"
+              effect="plain"
+              size="small"
+            >
+              整单包邮
+            </el-tag>
+            <el-tag
+              v-else-if="row.shipping_fee > 0"
+              type="warning"
+              effect="plain"
+              size="small"
+            >
+              ¥{{ row.shipping_fee.toFixed(2) }} 默认
+            </el-tag>
+            <el-tag v-else type="danger" effect="plain" size="small">
+              未配置
+            </el-tag>
           </template>
         </el-table-column>
 
