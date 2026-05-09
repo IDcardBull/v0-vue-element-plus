@@ -31,7 +31,6 @@ export interface ProductManageItem {
   name: string
   image: string
   category: string
-  craft: string
   retail_price_ref: number
   retail_enabled: boolean
   wholesale_enabled: boolean
@@ -94,7 +93,6 @@ async function loadList() {
         name: r.name,
         image: r.mainImage || r.coverImage || '/placeholder.svg',
         category: r.category?.name || '未分类',
-        craft: r.craft || '',
         retail_price_ref: Number(sku.retailPrice ?? r.retailPrice ?? 0),
         retail_enabled: r.retailEnabled === true,
         wholesale_enabled: r.wholesaleEnabled === true,
@@ -393,10 +391,9 @@ function levelTagType(l: DealerLevel) {
           </template>
         </el-table-column>
 
-        <el-table-column label="分类 / 工艺" width="130">
+        <el-table-column label="分类" width="130">
           <template #default="{ row }">
             <el-tag size="small" type="info" effect="plain">{{ row.category }}</el-tag>
-            <div class="craft">{{ row.craft }}</div>
           </template>
         </el-table-column>
 

@@ -2,7 +2,6 @@
 export * from './auth'
 export * from './product'
 export * from './category'
-export * from './brand'
 export * from './sku'
 export * from './order'
 export * from './customer'

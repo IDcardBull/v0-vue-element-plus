@@ -335,13 +335,11 @@ export class OrderService {
     const orderNo = `${input.channel === 'wholesale' ? 'WS' : 'RT'}${Date.now()}${Math.floor(Math.random() * 1000)}`
 
     const createdOrder = await this.prisma.$transaction(async (tx) => {
-      // 4. 占用库存（reserved += qty）
+      // 简化版（v2）：下单直接扣 onHand，不再走 reserved 占用 → 付款扣减的两段式
+      // 优点：库存模型简单，管理端"库存数量"就是用户能买到的量
+      // 缺点：未付款订单也占库存；如果订单被关闭/取消，需要返还库存（见 cancelOrder/closeOrder）
       for (const it of input.items) {
         const stocks = await tx.stock.findMany({ where: { skuId: it.skuId } })
-        // 找不到 Stock 记录有两种情况：
-        //   a) 管理端没给该 SKU 在任何仓库建过库存条目
-        //   b) 前端传上来的 skuId 实际是 productId / 错误 id
-        // 这里把 sku 信息一起带上，便于排查
         if (!stocks.length) {
           const sku = await tx.sku.findUnique({
             where: { id: it.skuId },
@@ -358,12 +356,11 @@ export class OrderService {
         }
         let remain = it.qty
         for (const s of stocks) {
-          const available = s.onHand - s.reserved
-          if (available <= 0) continue
-          const take = Math.min(remain, available)
+          if (s.onHand <= 0) continue
+          const take = Math.min(remain, s.onHand)
           await tx.stock.update({
             where: { id: s.id },
-            data: { reserved: s.reserved + take },
+            data: { onHand: s.onHand - take },
           })
           remain -= take
           if (remain === 0) break
@@ -533,42 +530,12 @@ export class OrderService {
     const order = await this.findById(orderId)
     if (order.status !== 'pending_ship') throw new BadRequestException('订单状态不允许发货')
 
+    void operator
     const shippedOrder = await this.prisma.$transaction(async (tx) => {
-      // 实际扣减库存：reserved -= qty，onHand -= qty
-      for (const it of order.items) {
-        const stocks = await tx.stock.findMany({ where: { skuId: it.skuId } })
-        let remain = it.qty
-        for (const s of stocks) {
-          if (s.reserved <= 0 || remain <= 0) continue
-          const take = Math.min(remain, s.reserved)
-          await tx.stock.update({
-            where: { id: s.id },
-            data: {
-              reserved: s.reserved - take,
-              onHand: s.onHand - take,
-            },
-          })
-          await tx.stockLog.create({
-            data: {
-              orderNo: order.orderNo,
-              type: 'out',
-              skuId: it.skuId,
-              warehouseId: s.warehouseId,
-              qty: take,
-              beforeOnHand: s.onHand,
-              afterOnHand: s.onHand - take,
-              relatedId: Number(order.id),
-              relatedType: 'order',
-              operator,
-              remark: `订单发货 ${order.orderNo}`,
-            },
-          })
-          remain -= take
-          if (remain === 0) break
-        }
-      }
+      // 简化版（v2）：库存在下单时已直接 onHand -= qty，发货时不再扣减；
+      // stock_logs 表已删，发货流水不再保留
 
-      // 累计商品销量 + 用户总���费
+      // 累计商品销量 + 用户总消费
       for (const it of order.items) {
         await tx.product.update({
           where: { id: it.productId },
@@ -670,20 +637,20 @@ export class OrderService {
       throw new BadRequestException('订单状态不允许关闭')
 
     return this.prisma.$transaction(async (tx) => {
-      // 释放占用库存
+      // 简化版（v2）：下单已直扣 onHand，关闭订单时把数量返还到第一个有库存的仓库
+      // 优先返还到下单时实际扣减的仓库（按 stocks.id 升序找第一个），
+      // 找不到任何 stocks 记录就 skip（极端情况：仓库已被删除）
       for (const it of order.items) {
-        const stocks = await tx.stock.findMany({ where: { skuId: it.skuId } })
-        let remain = it.qty
-        for (const s of stocks) {
-          if (s.reserved <= 0 || remain <= 0) continue
-          const give = Math.min(remain, s.reserved)
-          await tx.stock.update({
-            where: { id: s.id },
-            data: { reserved: s.reserved - give },
-          })
-          remain -= give
-          if (remain === 0) break
-        }
+        const stocks = await tx.stock.findMany({
+          where: { skuId: it.skuId },
+          orderBy: { id: 'asc' },
+        })
+        const target = stocks[0]
+        if (!target) continue
+        await tx.stock.update({
+          where: { id: target.id },
+          data: { onHand: { increment: it.qty } },
+        })
       }
       // 释放授信
       if (order.useCredit && order.userId) {

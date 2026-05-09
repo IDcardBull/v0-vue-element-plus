@@ -2,7 +2,6 @@ import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common'
 import { Public } from '@/common/decorators/public.decorator'
 import { ProductService } from '../product/product.service'
 import { CategoryService } from '../category/category.service'
-import { BrandService } from '../brand/brand.service'
 
 /**
  * 小程序端浏览接口
@@ -13,10 +12,9 @@ export class ClientCatalogController {
   constructor(
     private readonly productSvc: ProductService,
     private readonly categorySvc: CategoryService,
-    private readonly brandSvc: BrandService,
   ) {}
 
-  // ---------- 分类 / 品牌 ----------
+  // ---------- 分类 ----------
 
   @Public()
   @Get('categories/tree')
@@ -28,12 +26,6 @@ export class ClientCatalogController {
   @Get('categories')
   categoryList() {
     return this.categorySvc.findAll()
-  }
-
-  @Public()
-  @Get('brands')
-  brandList() {
-    return this.brandSvc.findAll()
   }
 
   // ---------- 商品 ----------
@@ -63,7 +55,6 @@ export class ClientCatalogController {
     const channel = q.channel === 'wholesale' ? 'wholesale' : 'retail'
     return this.productSvc.search({
       categoryId: q.categoryId ? Number(q.categoryId) : undefined,
-      brandId: q.brandId ? Number(q.brandId) : undefined,
       keyword: q.keyword,
       status: 1,
       channel,

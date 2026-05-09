@@ -257,36 +257,17 @@ model Category {
   @@map("categories")
 }
 
-model Brand {
-  id          Int       @id @default(autoincrement())
-  code        String    @unique @db.VarChar(64)
-  name        String    @db.VarChar(128)
-  logo        String?   @db.VarChar(500)
-  country     String?   @db.VarChar(64)
-  origin      String?   @db.VarChar(128) // 产地：江苏宜兴 / 江西景德镇
-  story       String?   @db.Text
-  sort        Int       @default(0)
-  status      Int       @default(1)
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  products    Product[]
-
-  @@map("brands")
-}
-
 // =====================================================================
 // 5. 商品 / SKU / 规格 / 阶梯价
 // =====================================================================
+// 简化版（v2，2026-05）：移除 Brand 整张表 + Product.craft/material/brandId
+// 业务侧不再使用品牌、工艺、胎质、产地概念，全部从 schema 中删除。
 
 model Product {
   id           Int       @id @default(autoincrement())
   code         String    @unique @db.VarChar(64) // 商品编码
   name         String    @db.VarChar(255)
   categoryId   Int?      @map("category_id")
-  brandId      Int?      @map("brand_id")
-  craft        String?   @db.VarChar(64) // 手工/半手工/机制
-  material     String?   @db.VarChar(64) // 胎质：高岭土/紫砂/瓷土
   mainImage    String?   @map("main_image") @db.VarChar(500)
   images       Json?     // 多图数组
   detail       String?   @db.LongText // 富文本详情
@@ -317,12 +298,10 @@ model Product {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  brand        Brand?    @relation(fields: [brandId], references: [id], onDelete: SetNull)
   skus         Sku[]
   orderItems   OrderItem[]
 
   @@index([categoryId])
-  @@index([brandId])
   @@index([status, retailEnabled, wholesaleEnabled])
   @@map("products")
 }
@@ -345,7 +324,6 @@ model Sku {
   product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
   priceTiers   PriceTier[]
   stocks       Stock[]
-  stockLogs    StockLog[]
   orderItems   OrderItem[]
 
   @@index([productId])
@@ -382,20 +360,18 @@ model Warehouse {
   isDefault Boolean   @default(false) @map("is_default")
 
   stocks    Stock[]
-  stockLogs StockLog[]
 
   @@map("warehouses")
 }
 
+// 简化版（v2）：库存只保留"现存量"。删除 reserved/inTransit/warnMin/warnMax，
+// 不再做下单占用、在途、预警阈值。库存为 onHand 一个数字，等于"实际可卖"。
+// 订单流程在扣减时直接 onHand -= qty，不足则抛错。
 model Stock {
   id          Int       @id @default(autoincrement())
   skuId       Int       @map("sku_id")
   warehouseId Int       @map("warehouse_id")
-  onHand      Int       @default(0) @map("on_hand")     // 现存量
-  reserved    Int       @default(0)                      // 占用/预占
-  inTransit   Int       @default(0) @map("in_transit")   // 在途
-  warnMin     Int       @default(10) @map("warn_min")    // 预警阈值
-  warnMax     Int       @default(1000) @map("warn_max")  // 过剩阈值
+  onHand      Int       @default(0) @map("on_hand") // 现存量（=实际可卖）
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   sku         Sku       @relation(fields: [skuId], references: [id], onDelete: Cascade)
@@ -405,29 +381,8 @@ model Stock {
   @@map("stocks")
 }
 
-model StockLog {
-  id            BigInt    @id @default(autoincrement())
-  orderNo       String    @map("order_no") @db.VarChar(64) // 单据号
-  type          String    @db.VarChar(16) // in/out/transfer/inventory/return
-  skuId         Int       @map("sku_id")
-  warehouseId   Int       @map("warehouse_id")
-  qty           Int
-  beforeOnHand  Int       @map("before_on_hand")
-  afterOnHand   Int       @map("after_on_hand")
-  relatedId     Int?      @map("related_id") // 关联订单/采购单 id
-  relatedType   String?   @map("related_type") @db.VarChar(32)
-  operator      String    @db.VarChar(64)
-  remark        String?   @db.VarChar(500)
-  createdAt     DateTime  @default(now()) @map("created_at")
-
-  sku           Sku       @relation(fields: [skuId], references: [id])
-  warehouse     Warehouse @relation(fields: [warehouseId], references: [id])
-
-  @@index([orderNo])
-  @@index([type, createdAt])
-  @@index([skuId])
-  @@map("stock_logs")
-}
+// 出入库流水表（StockLog）已在 v2 简化中删除。
+// 不再保留出/入库历史；订单变更直接修改 stocks.on_hand。
 
 // =====================================================================
 // 7. 订单 / 订单项 / 发货 / 对账

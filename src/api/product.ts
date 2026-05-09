@@ -5,7 +5,6 @@ export interface ProductQuery {
   pageSize?: number
   keyword?: string
   categoryId?: number
-  brandId?: number
   status?: string
   channel?: 'retail' | 'wholesale'
 }

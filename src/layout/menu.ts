@@ -22,19 +22,13 @@ export const menuData: MenuItem[] = [
     children: [
       { index: '/product/manage', title: '管理商品', icon: 'Goods' },
       { index: '/product/category', title: '分类管理', icon: 'Collection' },
-      { index: '/product/brand', title: '品牌管理', icon: 'Medal' },
-      { index: '/product/craft-material', title: '工艺胎质', icon: 'PriceTag' },
     ],
   },
   {
-    index: '/inventory',
+    // 库存管理简化版：单页，去掉了"库存预警"和"出入库记录"两个子菜单
+    index: '/inventory/stock',
     title: '库存管理',
     icon: 'Box',
-    children: [
-      { index: '/inventory/stock', title: '实时库存', icon: 'DataLine' },
-      { index: '/inventory/warning', title: '库存预警', icon: 'Warning' },
-      { index: '/inventory/record', title: '出入库记录', icon: 'Tickets' },
-    ],
   },
   {
     index: '/order',

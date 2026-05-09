@@ -13,7 +13,7 @@ interface StatCard {
 const stats = ref<StatCard[]>([
   { label: '今日订单数', value: '-', tone: 'primary', icon: 'ShoppingCart' },
   { label: '今日支付金额', value: '-', tone: 'success', icon: 'Money' },
-  { label: '库存预警 SKU', value: '-', tone: 'warning', icon: 'Warning' },
+  { label: '低库存 SKU', value: '-', tone: 'warning', icon: 'Warning' },
   { label: '待发货订单', value: '-', tone: 'danger', icon: 'Box' },
 ])
 
@@ -113,7 +113,7 @@ async function loadData() {
     stats.value = [
       { label: '今日订单数', value: overview.todayOrderCount ?? 0, tone: 'primary', icon: 'ShoppingCart' },
       { label: '今日支付金额', value: formatMoney(overview.todayOrderAmount ?? 0), tone: 'success', icon: 'Money' },
-      { label: '库存预警 SKU', value: overview.lowStockCount ?? 0, tone: 'warning', icon: 'Warning' },
+      { label: '低库存 SKU', value: overview.lowStockCount ?? 0, tone: 'warning', icon: 'Warning' },
       { label: '待发货订单', value: overview.pendingShipCount ?? 0, tone: 'danger', icon: 'Box' },
     ]
     topProducts.value = Array.isArray(top) ? top : []
@@ -123,7 +123,7 @@ async function loadData() {
     stats.value = [
       { label: '今日订单数', value: 0, tone: 'primary', icon: 'ShoppingCart' },
       { label: '今日支付金额', value: formatMoney(0), tone: 'success', icon: 'Money' },
-      { label: '库存预警 SKU', value: 0, tone: 'warning', icon: 'Warning' },
+      { label: '低库存 SKU', value: 0, tone: 'warning', icon: 'Warning' },
       { label: '待发货订单', value: 0, tone: 'danger', icon: 'Box' },
     ]
     topProducts.value = []

@@ -6,34 +6,29 @@ export class SkuService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * 给 SKU 列表追加 totalOnHand / totalReserved / availableQty
-   * （从 Stock 表按 skuId 聚合，跨所有仓库求和）
+   * 给 SKU 列表追加 totalOnHand / availableQty / stock 三个等价字段
+   * （简化版：库存只剩 onHand，跨仓求和即可）
    */
   private async withStockAgg<T extends { id: number }>(skus: T[]) {
-    if (!skus.length) return [] as Array<T & { totalOnHand: number; totalReserved: number; availableQty: number }>
+    if (!skus.length) return [] as Array<T & { totalOnHand: number; availableQty: number; stock: number }>
     const ids = skus.map((s) => s.id)
     const rows = await this.prisma.stock.findMany({
       where: { skuId: { in: ids } },
-      select: { skuId: true, onHand: true, reserved: true },
+      select: { skuId: true, onHand: true },
     })
-    const map = new Map<number, { onHand: number; reserved: number }>()
+    const map = new Map<number, number>()
     for (const r of rows) {
-      const m = map.get(r.skuId) || { onHand: 0, reserved: 0 }
-      m.onHand += r.onHand
-      m.reserved += r.reserved
-      map.set(r.skuId, m)
+      map.set(r.skuId, (map.get(r.skuId) || 0) + r.onHand)
     }
     return skus.map((s) => {
-      const agg = map.get(s.id) || { onHand: 0, reserved: 0 }
-      const available = Math.max(agg.onHand - agg.reserved, 0)
+      const onHand = map.get(s.id) || 0
       return {
         ...s,
-        totalOnHand: agg.onHand,
-        totalReserved: agg.reserved,
-        availableQty: available,
+        totalOnHand: onHand,
+        availableQty: onHand,
         // 兼容：旧前端字段 stock 仍指向"可用库存"
-        stock: available,
-      } as T & { totalOnHand: number; totalReserved: number; availableQty: number }
+        stock: onHand,
+      } as T & { totalOnHand: number; availableQty: number; stock: number }
     })
   }
 
@@ -60,8 +55,7 @@ export class SkuService {
   }
 
   /**
-   * 更新 SKU 库存：写入默认仓库的 Stock.onHand。
-   * 不再写 Sku.stock（该字段已删除，库存唯一真源是 Stock 表）。
+   * 更新 SKU 库存：写入默认仓库的 Stock.onHand
    */
   async updateStock(id: number, stock: number) {
     const sku = await this.prisma.sku.findUnique({ where: { id }, select: { id: true } })
@@ -78,8 +72,8 @@ export class SkuService {
     const safe = Math.max(Number(stock) || 0, 0)
     await this.prisma.stock.upsert({
       where: { skuId_warehouseId: { skuId: id, warehouseId: wh.id } },
-      create: { skuId: id, warehouseId: wh.id, onHand: safe, reserved: 0 },
-      update: { onHand: safe }, // 仅覆盖 onHand，不动 reserved
+      create: { skuId: id, warehouseId: wh.id, onHand: safe },
+      update: { onHand: safe },
     })
     return this.findById(id)
   }

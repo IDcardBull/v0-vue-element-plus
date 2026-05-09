@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common'
 import { ProductModule } from '../product/product.module'
 import { CategoryModule } from '../category/category.module'
-import { BrandModule } from '../brand/brand.module'
 import { OrderModule } from '../order/order.module'
 
 import { ClientCatalogController } from './client-catalog.controller'
@@ -18,7 +17,7 @@ import { WechatPayService } from './wechat-pay.service'
  * 所有 /client/* 路由（除 /client/auth/* 由 ClientAuthModule 提供）都在这里
  */
 @Module({
-  imports: [ProductModule, CategoryModule, BrandModule, OrderModule],
+  imports: [ProductModule, CategoryModule, OrderModule],
   controllers: [
     ClientCatalogController,
     ClientUserController,

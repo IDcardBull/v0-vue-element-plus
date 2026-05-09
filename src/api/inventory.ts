@@ -1,39 +1,28 @@
 import request from './request'
 
+/**
+ * 简化版（v2）：
+ * 库存只做"商品 + 数量"展示。
+ * 后端去掉了 stockLog 流水、warnMin/warnMax 预警阈值、reserved 占用、inTransit 在途。
+ * 前端只保留 list、updateOnHand、warehouses 三个接口。
+ */
+
 export function fetchStockList(params: any) {
-  return request.get<any, { list: any[]; total: number; stats: any }>('/admin/inventory/stocks', { params })
+  return request.get<any, { list: any[]; total: number }>('/admin/inventory/stocks', { params })
 }
 
-export function fetchStockWarning(params: any) {
-  return request.get<any, { list: any[]; total: number }>('/admin/inventory/warnings', { params })
-}
-
-export function fetchStockRecords(params: any) {
-  return request.get<any, { list: any[]; total: number }>('/admin/inventory/records', { params })
-}
-
-export function createStockIn(data: any) {
-  return request.post<any, any>('/admin/inventory/stock-in', data)
-}
-
-export function createStockOut(data: any) {
-  return request.post<any, any>('/admin/inventory/stock-out', data)
-}
-
-export function createStockAdjust(data: any) {
-  return request.post<any, any>('/admin/inventory/adjust', data)
+export function updateStockOnHand(id: number, onHand: number) {
+  return request.patch<any, any>(`/admin/inventory/stocks/${id}`, { onHand })
 }
 
 export function fetchWarehouses() {
-  return request.get<any, Array<{ id: number; name: string; code?: string }>>('/admin/inventory/warehouses')
+  return request.get<any, Array<{ id: number; name: string; code?: string }>>(
+    '/admin/inventory/warehouses',
+  )
 }
 
 export const inventoryApi = {
   warehouses: fetchWarehouses,
   stockList: fetchStockList,
-  warnings: fetchStockWarning,
-  records: fetchStockRecords,
-  stockIn: createStockIn,
-  stockOut: createStockOut,
-  adjust: createStockAdjust,
+  updateOnHand: updateStockOnHand,
 }

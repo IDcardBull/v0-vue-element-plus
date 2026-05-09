@@ -28,8 +28,6 @@ function normalizePriceTiers(raw: any): { minQty: number; maxQty: number | null;
 interface ProductQuery {
   keyword?: string
   categoryId?: number
-  brandId?: number
-  craft?: string
   status?: number
   /** retail / wholesale / all，对应零售商品/批发商品/全部 */
   channel?: string
@@ -53,8 +51,6 @@ export class ProductService {
       where.OR = [{ name: { contains: q.keyword } }, { code: { contains: q.keyword } }]
     }
     if (q.categoryId) where.categoryId = Number(q.categoryId)
-    if (q.brandId) where.brandId = Number(q.brandId)
-    if (q.craft) where.craft = q.craft
     if (q.status !== undefined) where.status = Number(q.status)
     if (q.channel === 'retail') where.retailEnabled = true
     if (q.channel === 'wholesale') where.wholesaleEnabled = true
@@ -69,7 +65,6 @@ export class ProductService {
         take: pageSize,
         include: {
           category: { select: { id: true, name: true } },
-          brand: { select: { id: true, name: true } },
           skus: {
             where: { status: 1 },
             orderBy: { id: 'asc' },
@@ -82,22 +77,18 @@ export class ProductService {
       this.prisma.product.count({ where }),
     ])
 
-    // 实际可用库存 = sum(stocks.onHand - stocks.reserved)
-    // 同时按 product 维度（用于 totalStock）和 sku 维度（注入 sku.stock）双聚合
+    // 简化版：库存 = sum(stocks.onHand)，下单直接扣 onHand，不再有 reserved 占用机制
     const ids = list.map((p) => p.id)
     const stockRows = await this.prisma.stock.findMany({
       where: { sku: { productId: { in: ids } } },
-      select: { skuId: true, onHand: true, reserved: true, sku: { select: { productId: true } } },
+      select: { skuId: true, onHand: true, sku: { select: { productId: true } } },
     })
-    const stockMap = new Map<number, number>() // productId -> available
-    const skuStockMap = new Map<number, { onHand: number; reserved: number }>() // skuId -> agg
+    const stockMap = new Map<number, number>() // productId -> totalOnHand
+    const skuStockMap = new Map<number, number>() // skuId -> totalOnHand
     for (const r of stockRows) {
       const pid = r.sku.productId
-      stockMap.set(pid, (stockMap.get(pid) || 0) + Math.max(r.onHand - r.reserved, 0))
-      const m = skuStockMap.get(r.skuId) || { onHand: 0, reserved: 0 }
-      m.onHand += r.onHand
-      m.reserved += r.reserved
-      skuStockMap.set(r.skuId, m)
+      stockMap.set(pid, (stockMap.get(pid) || 0) + r.onHand)
+      skuStockMap.set(r.skuId, (skuStockMap.get(r.skuId) || 0) + r.onHand)
     }
 
     // 批发列表才需要返回阶梯价聚合
@@ -124,14 +115,12 @@ export class ProductService {
         const tierAgg = tierAggMap.get(p.id)
         // 给每个 SKU 注入聚合后的库存字段（与 findById 口径一致）
         const skus = (p.skus || []).map((s: any) => {
-          const agg = skuStockMap.get(s.id) || { onHand: 0, reserved: 0 }
-          const available = Math.max(agg.onHand - agg.reserved, 0)
+          const onHand = skuStockMap.get(s.id) || 0
           return {
             ...s,
-            totalOnHand: agg.onHand,
-            totalReserved: agg.reserved,
-            availableQty: available,
-            stock: available,
+            totalOnHand: onHand,
+            availableQty: onHand,
+            stock: onHand,
           }
         })
         return {
@@ -160,7 +149,6 @@ export class ProductService {
       where: { id },
       include: {
         category: true,
-        brand: true,
         skus: {
           orderBy: { id: 'asc' },
           include: channel === 'retail' ? undefined : { priceTiers: { orderBy: { minQty: 'asc' } } },
@@ -169,31 +157,25 @@ export class ProductService {
     })
     if (!p) throw new NotFoundException('商品不存在')
 
-    // 计算 SKU 库存聚合：可用 = sum(onHand) - sum(reserved)
+    // 简化：库存 = sum(onHand)，下单直接扣 onHand
     const skuIds = (p.skus || []).map((s) => s.id)
     const stockRows = skuIds.length
       ? await this.prisma.stock.findMany({
           where: { skuId: { in: skuIds } },
-          select: { skuId: true, onHand: true, reserved: true },
+          select: { skuId: true, onHand: true },
         })
       : []
-    const stockMap = new Map<number, { onHand: number; reserved: number }>()
+    const stockMap = new Map<number, number>()
     for (const r of stockRows) {
-      const m = stockMap.get(r.skuId) || { onHand: 0, reserved: 0 }
-      m.onHand += r.onHand
-      m.reserved += r.reserved
-      stockMap.set(r.skuId, m)
+      stockMap.set(r.skuId, (stockMap.get(r.skuId) || 0) + r.onHand)
     }
     const enrichSku = (s: any) => {
-      const agg = stockMap.get(s.id) || { onHand: 0, reserved: 0 }
-      const available = Math.max(agg.onHand - agg.reserved, 0)
+      const onHand = stockMap.get(s.id) || 0
       return {
         ...s,
-        totalOnHand: agg.onHand,
-        totalReserved: agg.reserved,
-        availableQty: available,
-        // 前端兼容字段：sku.stock = 可用库存
-        stock: available,
+        totalOnHand: onHand,
+        availableQty: onHand,
+        stock: onHand,
       }
     }
 
@@ -244,7 +226,7 @@ export class ProductService {
     const safeOnHand = Math.max(Number(onHand) || 0, 0)
     await tx.stock.upsert({
       where: { skuId_warehouseId: { skuId, warehouseId } },
-      create: { skuId, warehouseId, onHand: safeOnHand, reserved: 0 },
+      create: { skuId, warehouseId, onHand: safeOnHand },
       // onHand 仅在前端明确传新值时才覆盖；这里业务上"商品编辑里的库存数字"就代表默认仓数量
       update: { onHand: safeOnHand },
     })
@@ -359,7 +341,7 @@ export class ProductService {
           }
           touchedIds.push(skuId)
 
-          // 同步默认仓 Stock（注意：不会动 reserved，避免覆盖正在占用中的订单）
+          // 同步默认仓 Stock：以表单数字直接覆盖 onHand
           await this.upsertStockForSku(tx, skuId, formStock, warehouseId)
 
           // 重写 PriceTier：先删再插（priceTiers 数量通常很少，简单就好）

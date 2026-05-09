@@ -1,19 +1,7 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common'
-import { IsInt, IsNotEmpty, IsOptional } from 'class-validator'
+import { Controller, Get, Query } from '@nestjs/common'
+import { IsOptional } from 'class-validator'
 import { InventoryService } from './inventory.service'
-import { CurrentUser, JwtPayload } from '@/common/decorators/current-user.decorator'
 import { PaginationDto } from '@/common/dto/pagination.dto'
-
-class StockOpDto {
-  @IsNotEmpty() type: 'in' | 'out' | 'transfer' | 'inventory' | 'return'
-  @IsInt() skuId: number
-  @IsInt() warehouseId: number
-  @IsInt() qty: number
-  @IsOptional() orderNo?: string
-  @IsOptional() remark?: string
-  @IsOptional() relatedId?: number
-  @IsOptional() relatedType?: string
-}
 
 class StockQueryDto extends PaginationDto {
   @IsOptional() keyword?: string
@@ -21,14 +9,12 @@ class StockQueryDto extends PaginationDto {
   @IsOptional() categoryId?: number
 }
 
-class RecordQueryDto extends PaginationDto {
-  @IsOptional() type?: 'in' | 'out' | 'transfer' | 'inventory' | 'return'
-  @IsOptional() keyword?: string
-  @IsOptional() warehouseId?: number
-  @IsOptional() dateFrom?: string
-  @IsOptional() dateTo?: string
-}
-
+/**
+ * 简化版（v2，2026-05）库存接口：
+ * - GET /admin/inventory/warehouses 仓库列表
+ * - GET /admin/inventory/stocks     SKU + 数量分页
+ * 已下线：op / stock-in / stock-out / adjust / records / warnings
+ */
 @Controller('admin/inventory')
 export class InventoryController {
   constructor(private readonly svc: InventoryService) {}
@@ -41,59 +27,5 @@ export class InventoryController {
   @Get('stocks')
   stocks(@Query() q: StockQueryDto) {
     return this.svc.stockList(q)
-  }
-
-  @Get('warnings')
-  warnings(@Query('level') level?: 'urgent' | 'warning' | 'excess') {
-    return this.svc.warnings(level)
-  }
-
-  @Get('records')
-  records(@Query() q: RecordQueryDto) {
-    return this.svc.recordList(q)
-  }
-
-  @Post('op')
-  async op(@Body() dto: StockOpDto, @CurrentUser() user: JwtPayload) {
-    return this.execOp(dto, user, dto.type)
-  }
-
-  // 入库
-  @Post('stock-in')
-  stockIn(@Body() dto: StockOpDto, @CurrentUser() user: JwtPayload) {
-    return this.execOp(dto, user, 'in')
-  }
-
-  // 出库
-  @Post('stock-out')
-  stockOut(@Body() dto: StockOpDto, @CurrentUser() user: JwtPayload) {
-    return this.execOp(dto, user, 'out')
-  }
-
-  // 盘点调整（支持正负 qty）
-  @Post('adjust')
-  adjust(@Body() dto: StockOpDto, @CurrentUser() user: JwtPayload) {
-    return this.execOp(dto, user, 'inventory')
-  }
-
-  private execOp(
-    dto: StockOpDto,
-    user: JwtPayload,
-    type: 'in' | 'out' | 'transfer' | 'inventory' | 'return',
-  ) {
-    const orderNo =
-      dto.orderNo ||
-      `${type.toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`
-    return this.svc.stockOp({
-      orderNo,
-      type,
-      skuId: dto.skuId,
-      warehouseId: dto.warehouseId,
-      qty: dto.qty,
-      operator: user.username,
-      remark: dto.remark,
-      relatedId: dto.relatedId,
-      relatedType: dto.relatedType,
-    })
   }
 }

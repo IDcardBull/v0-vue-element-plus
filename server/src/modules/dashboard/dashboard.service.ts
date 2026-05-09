@@ -6,20 +6,16 @@ export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * 跨仓库聚合，统计可用库存 <= threshold 的 SKU 数量。
-   * 没有任何 Stock 记录的 SKU 也算低库存（onHand=0）。
+   * 简化版：跨仓库聚合，统计 onHand <= threshold 的 SKU 数量。
+   * 没有任何 Stock 记录的 SKU 也算低库存（视为 0）。
    */
   private async computeLowStockCount(threshold: number) {
     const grouped = await this.prisma.stock.groupBy({
       by: ['skuId'],
-      _sum: { onHand: true, reserved: true },
+      _sum: { onHand: true },
     })
     const skuIdsWithStock = new Set(grouped.map((g) => g.skuId))
-    let low = grouped.filter((g) => {
-      const available = (g._sum.onHand || 0) - (g._sum.reserved || 0)
-      return available <= threshold
-    }).length
-    // 还要把"完全没有 Stock 记录"的活跃 SKU 算进来
+    let low = grouped.filter((g) => (g._sum.onHand || 0) <= threshold).length
     const noStockCount = await this.prisma.sku.count({
       where: { status: 1, id: { notIn: Array.from(skuIdsWithStock) } },
     })

@@ -9,7 +9,6 @@ import { RoleModule } from './modules/role/role.module'
 import { LogModule } from './modules/log/log.module'
 import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { CategoryModule } from './modules/category/category.module'
-import { BrandModule } from './modules/brand/brand.module'
 import { ProductModule } from './modules/product/product.module'
 import { SkuModule } from './modules/sku/sku.module'
 import { PriceTierModule } from './modules/price-tier/price-tier.module'
@@ -35,7 +34,6 @@ import { DistributorModule } from './modules/distributor/distributor.module'
     RoleModule,
     DashboardModule,
     CategoryModule,
-    BrandModule,
     ProductModule,
     SkuModule,
     PriceTierModule,

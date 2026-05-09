@@ -194,16 +194,11 @@ const menuTree = [
     children: [
       { key: 'product.list', label: '商品列表' },
       { key: 'product.category', label: '分类管理' },
-      { key: 'product.brand', label: '品牌管理' },
     ],
   },
   {
-    key: 'inventory', label: '库存管理',
-    children: [
-      { key: 'inventory.stock', label: '实时库存' },
-      { key: 'inventory.warning', label: '库存预警' },
-      { key: 'inventory.record', label: '出入库记录' },
-    ],
+    // 库存管理简化版：单页权限即可
+    key: 'inventory.stock', label: '库存管理',
   },
   {
     key: 'order', label: '订单管理',
@@ -230,8 +225,8 @@ const menuTree = [
 ]
 
 const checkedMenus = ref<string[]>([
-  'dashboard', 'product.list', 'product.category', 'product.brand',
-  'inventory.stock', 'inventory.warning', 'inventory.record',
+  'dashboard', 'product.list', 'product.category',
+  'inventory.stock',
   'order.retail', 'order.wholesale', 'user.customer', 'user.distributor',
 ])
 

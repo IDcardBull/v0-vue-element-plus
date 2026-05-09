@@ -8,8 +8,6 @@ import { PaginationDto } from '@/common/dto/pagination.dto'
 class ProductQueryDto extends PaginationDto {
   @IsOptional() keyword?: string
   @IsOptional() categoryId?: number
-  @IsOptional() brandId?: number
-  @IsOptional() craft?: string
   @IsOptional() status?: number
   @IsOptional() channel?: string // retail / wholesale / all
 }
@@ -22,9 +20,6 @@ class ProductDto {
   name: string
 
   @IsOptional() @IsInt() categoryId?: number
-  @IsOptional() @IsInt() brandId?: number
-  @IsOptional() craft?: string
-  @IsOptional() material?: string
   @IsOptional() mainImage?: string
   @IsOptional() images?: string[]
   @IsOptional() detail?: string

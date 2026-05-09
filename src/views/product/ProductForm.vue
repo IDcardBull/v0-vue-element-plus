@@ -6,8 +6,6 @@ import { Plus, Delete, ArrowLeft } from '@element-plus/icons-vue'
 import { uploadApi } from '@/api/upload'
 import { productApi } from '@/api/product'
 import { categoryApi } from '@/api/category'
-import { brandApi } from '@/api/brand'
-import { dictApi } from '@/api/dict'
 
 /* ----------------------------------- 类型 ---------------------------------- */
 interface SpecValue {
@@ -34,14 +32,8 @@ interface ProductFormModel {
   name: string
   code: string
   category_id: string
-  brand_id: string
-  craft: string
-  material: string
-  origin: string
   tags: string[]
   retail_price: number | null
-  market_price: number | null
-  stock_warning: number | null
   wholesale_enabled: boolean
   app_scope: Array<'retail' | 'wholesale'>
   min_wholesale_qty: number | null
@@ -70,14 +62,8 @@ const form = reactive<ProductFormModel>({
   name: '',
   code: '',
   category_id: '',
-  brand_id: '',
-  craft: '',
-  material: '',
-  origin: '景德镇',
   tags: [],
   retail_price: null,
-  market_price: null,
-  stock_warning: 10,
   wholesale_enabled: true,
   app_scope: ['retail'],
   min_wholesale_qty: 6,
@@ -95,15 +81,11 @@ const rules: FormRules<ProductFormModel> = {
   name: [{ required: true, message: '请输入商品名称', trigger: 'blur' }],
   code: [{ required: true, message: '请输入商品编码', trigger: 'blur' }],
   category_id: [{ required: true, message: '请选择商品分类', trigger: 'change' }],
-  craft: [{ required: true, message: '请选择工艺', trigger: 'change' }],
   unit: [{ required: true, message: '请输入单位', trigger: 'blur' }],
 }
 
 /* --------------------------------- 选项数据 -------------------------------- */
 const categoryOptions = ref<{ value: string; label: string }[]>([])
-const brandOptions = ref<{ value: string; label: string }[]>([])
-const craftOptions = ref<{ value: string; label: string }[]>([])
-const materialOptions = ref<{ value: string; label: string }[]>([])
 const tagOptions = ['新品', '热销', '礼盒', '手作', '限量', '非遗']
 
 /* ---------------------------------- 规格 ---------------------------------- */
@@ -194,7 +176,7 @@ function regenerateSkuMatrix() {
         sku_code: '',
         sku_image: '',
         retail_price: 0,
-        wholesale_price: form.market_price,
+        wholesale_price: form.retail_price,
         stock: 0,
         enabled: true,
       }
@@ -315,24 +297,13 @@ function flattenCategories(list: any[]): any[] {
 
 async function loadOptions() {
   try {
-    const [categories, brands, crafts, materials] = await Promise.all([
-      categoryApi.tree(),
-      brandApi.list({ page: 1, pageSize: 100 }),
-      dictApi.items('craft'),
-      dictApi.items('material'),
-    ])
+    const categories = await categoryApi.tree()
     categoryOptions.value = flattenCategories(categories || []).map((item) => ({
       value: String(item.id),
       label: `${'　'.repeat(Math.max(Number(item.level || 1) - 1, 0))}${item.name}`,
     }))
-    brandOptions.value = (brands?.list || []).map((item) => ({
-      value: String(item.id),
-      label: item.name,
-    }))
-    craftOptions.value = (crafts || []).map((item) => ({ value: item.value, label: item.label }))
-    materialOptions.value = (materials || []).map((item) => ({ value: item.value, label: item.label }))
   } catch (error) {
-    ElMessage.error('分类或品牌加载失败')
+    ElMessage.error('分类加载失败')
   }
 }
 
@@ -401,14 +372,8 @@ async function loadProductDetail() {
       name: item.name || '',
       code: item.code || '',
       category_id: item.categoryId ? String(item.categoryId) : '',
-      brand_id: item.brandId ? String(item.brandId) : '',
-      craft: item.craft || '',
-      material: item.material || '',
-      origin: item.origin || '景德镇',
       tags: normalizeImageList(item.tags),
       retail_price: item.retailPrice === null || item.retailPrice === undefined ? null : Number(item.retailPrice),
-      market_price: item.memberPrice === null || item.memberPrice === undefined ? null : Number(item.memberPrice),
-      stock_warning: form.stock_warning,
       wholesale_enabled: !!item.wholesaleEnabled,
       app_scope: [
         ...(item.retailEnabled ? ['retail' as const] : []),
@@ -430,45 +395,20 @@ async function loadProductDetail() {
   }
 }
 
-async function persistCustomDictOptions() {
-  const tasks: Promise<unknown>[] = []
-  if (form.craft && !craftOptions.value.some((item) => item.value === form.craft)) {
-    tasks.push(
-      dictApi.createItem('craft', { label: form.craft, value: form.craft }).then((item) => {
-        craftOptions.value.push({ value: item.value, label: item.label })
-      }),
-    )
-  }
-  if (form.material && !materialOptions.value.some((item) => item.value === form.material)) {
-    tasks.push(
-      dictApi.createItem('material', { label: form.material, value: form.material }).then((item) => {
-        materialOptions.value.push({ value: item.value, label: item.label })
-      }),
-    )
-  }
-  await Promise.all(tasks)
-}
-
 function buildProductPayload(status: 'on' | 'draft') {
   const categoryId = Number(form.category_id)
-  const brandId = form.brand_id ? Number(form.brand_id) : undefined
   const minQty = Math.max(Number(form.min_wholesale_qty || 1), 1)
   const wholesaleEnabled = form.app_scope.includes('wholesale')
   return {
     code: form.code,
     name: form.name,
     categoryId: Number.isFinite(categoryId) ? categoryId : undefined,
-    brandId: Number.isFinite(Number(brandId)) ? brandId : undefined,
-    craft: form.craft,
-    material: form.material || undefined,
     mainImage: form.main_image || undefined,
     images: form.gallery,
     detail: form.description || undefined,
     tags: form.tags,
     retailEnabled: form.app_scope.includes('retail'),
     retailPrice: Number(skuList.value.find((s) => s.enabled)?.retail_price || 0),
-    // memberPrice 严格表示"零售会员价/活动价"，由"市场价"输入框驱动；为空就 null
-    memberPrice: form.market_price === null ? null : Number(form.market_price),
     wholesaleEnabled,
     minWholesaleQty: minQty,
     freeShipping: !!form.free_shipping,
@@ -477,7 +417,7 @@ function buildProductPayload(status: 'on' | 'draft') {
     skus: skuList.value
       .filter((sku) => sku.enabled)
       .map((sku, index) => {
-        // 批发价 → 一��� priceTier；如果没启批发或没填批发价，priceTiers 留空数组（后端会清掉旧档）
+        // 批发价 → 一档 priceTier；如果没启批发或没填批发价，priceTiers 留空数组（后端会清掉旧档）
         const wp = sku.wholesale_price
         const priceTiers =
           wholesaleEnabled && wp !== null && wp !== undefined && Number(wp) >= 0
@@ -491,8 +431,6 @@ function buildProductPayload(status: 'on' | 'draft') {
           skuImage: sku.sku_image || form.main_image || undefined,
           sku_image: sku.sku_image || form.main_image || undefined,
           retailPrice: Number(sku.retail_price || form.retail_price || 0),
-          // SKU 级别的会员价同步 form.market_price，避免和 product.memberPrice 不一致
-          memberPrice: form.market_price === null ? null : Number(form.market_price),
           stock: Number(sku.stock || 0),
           weight: form.weight === null ? null : Number(form.weight),
           status: 1,
@@ -527,7 +465,6 @@ async function handleSubmit(status: 'on' | 'draft') {
   submitting.value = true
   form.status = status
   try {
-    await persistCustomDictOptions()
     const payload = buildProductPayload(status)
     if (isEdit.value && productId) {
       await productApi.update(Number(productId), payload)
@@ -623,18 +560,6 @@ onMounted(async () => {
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="12">
-            <el-form-item label="所属品牌">
-              <el-select v-model="form.brand_id" placeholder="请选择品牌" clearable style="width: 100%">
-                <el-option
-                  v-for="o in brandOptions"
-                  :key="o.value"
-                  :value="o.value"
-                  :label="o.label"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
           <el-col :span="24">
             <el-form-item label="上架范围">
               <el-checkbox-group v-model="form.app_scope">
@@ -644,47 +569,8 @@ onMounted(async () => {
               <div class="form-tip">选择商品在哪个小程序中展示；可同时上架到两个小程序。</div>
             </el-form-item>
           </el-col>
-          <el-col :span="8">
-            <el-form-item label="工艺" prop="craft">
-              <el-select
-                v-model="form.craft"
-                placeholder="请选择或输入工艺"
-                filterable
-                allow-create
-                default-first-option
-                style="width: 100%"
-              >
-                <el-option v-for="o in craftOptions" :key="o.value" :value="o.value" :label="o.label" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="胎质">
-              <el-select
-                v-model="form.material"
-                placeholder="请选择或输入胎质"
-                filterable
-                allow-create
-                default-first-option
-                clearable
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="o in materialOptions"
-                  :key="o.value"
-                  :value="o.value"
-                  :label="o.label"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="产地">
-              <el-input v-model="form.origin" placeholder="例如：景德镇" />
-            </el-form-item>
-          </el-col>
           <el-col :span="24">
-            <el-form-item label="商品标签">
+            <el-form-item label="商品标���">
               <el-select
                 v-model="form.tags"
                 multiple
@@ -696,27 +582,6 @@ onMounted(async () => {
               >
                 <el-option v-for="t in tagOptions" :key="t" :value="t" :label="t" />
               </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="市场价">
-              <el-input-number
-                v-model="form.market_price"
-                :min="0"
-                :precision="2"
-                :controls="false"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="库存预警">
-              <el-input-number
-                v-model="form.stock_warning"
-                :min="0"
-                :controls="false"
-                style="width: 100%"
-              />
             </el-form-item>
           </el-col>
           <el-col :span="8">
