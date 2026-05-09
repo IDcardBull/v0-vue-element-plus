@@ -23,6 +23,7 @@ import { LogisticsModule } from './modules/logistics/logistics.module'
 import { NotifyModule } from './modules/notify/notify.module'
 import { CustomerModule } from './modules/customer/customer.module'
 import { DistributorModule } from './modules/distributor/distributor.module'
+import { BannerModule } from './modules/banner/banner.module'
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { DistributorModule } from './modules/distributor/distributor.module'
     NotifyModule,
     CustomerModule,
     DistributorModule,
+    BannerModule,
   ],
   providers: [
     // 默认所有路由需要 JWT；接口上用 @Public() 放行
