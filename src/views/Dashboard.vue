@@ -212,59 +212,82 @@ onUnmounted(() => {
 .dashboard {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 .err-alert {
   margin-bottom: 4px;
+  border-radius: var(--ym-radius-md);
 }
 .mt-16 {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
+.stat-card {
+  border: none !important;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfd 100%);
+  box-shadow: var(--ym-shadow-sm) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--ym-shadow-md) !important;
+}
 .stat-card :deep(.el-card__body) {
-  padding: 18px 20px;
+  padding: 20px 22px;
 }
 
 .stat-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .stat-label {
   font-size: 13px;
   color: var(--ym-text-secondary);
+  letter-spacing: 0.3px;
 }
 .stat-value {
-  font-size: 26px;
-  font-weight: 600;
+  font-size: 28px;
+  font-weight: 700;
   color: var(--ym-primary);
-  margin: 6px 0 4px;
-  line-height: 1.2;
+  margin: 8px 0 0;
+  line-height: 1.1;
+  letter-spacing: -0.5px;
 }
 
 .stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.06);
 }
-.stat-icon.primary { background: #ecf5ff; color: #409eff; }
-.stat-icon.success { background: #f0f9eb; color: #67c23a; }
-.stat-icon.warning { background: #fdf6ec; color: #e6a23c; }
-.stat-icon.danger  { background: #fef0f0; color: #f56c6c; }
+.stat-icon.primary { background: linear-gradient(135deg, #5e9eff, #2d7af0); color: #fff; }
+.stat-icon.success { background: linear-gradient(135deg, #4ad97e, #2bb564); color: #fff; }
+.stat-icon.warning { background: linear-gradient(135deg, #ffc46a, #ff9f0a); color: #fff; }
+.stat-icon.danger  { background: linear-gradient(135deg, #ff7a70, #ff453a); color: #fff; }
+
+.trend-card :deep(.el-card__header) {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--ym-border-light);
+}
 
 .trend-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  font-weight: 600;
+  color: var(--ym-text);
 }
 
 .trend-chart {
-  height: 280px;
+  height: 300px;
   width: 100%;
 }
 </style>
