@@ -17,26 +17,21 @@ const common_1 = require("@nestjs/common");
 const public_decorator_1 = require("../../common/decorators/public.decorator");
 const product_service_1 = require("../product/product.service");
 const category_service_1 = require("../category/category.service");
-const brand_service_1 = require("../brand/brand.service");
 /**
  * 小程序端浏览接口
  * 路径前缀 /client/*，全部公开（不需要登录也能浏览商品）
  */
 let ClientCatalogController = class ClientCatalogController {
-    constructor(productSvc, categorySvc, brandSvc) {
+    constructor(productSvc, categorySvc) {
         this.productSvc = productSvc;
         this.categorySvc = categorySvc;
-        this.brandSvc = brandSvc;
     }
-    // ---------- 分类 / 品牌 ----------
+    // ---------- 分类 ----------
     categoryTree() {
         return this.categorySvc.tree();
     }
     categoryList() {
         return this.categorySvc.findAll();
-    }
-    brandList() {
-        return this.brandSvc.findAll();
     }
     // ---------- 商品 ----------
     /**
@@ -59,7 +54,6 @@ let ClientCatalogController = class ClientCatalogController {
         const channel = q.channel === 'wholesale' ? 'wholesale' : 'retail';
         return this.productSvc.search({
             categoryId: q.categoryId ? Number(q.categoryId) : undefined,
-            brandId: q.brandId ? Number(q.brandId) : undefined,
             keyword: q.keyword,
             status: 1,
             channel,
@@ -83,13 +77,13 @@ let ClientCatalogController = class ClientCatalogController {
             sortOrder: 'desc',
         });
     }
-    /** 商品详情（含 SKU 列表） */
-    productDetail(id) {
-        return this.productSvc.findById(id);
+    /** 商品详情（含 SKU 列表）。channel=wholesale 才返回阶梯价/批发字段，默认零售。 */
+    productDetail(id, channel) {
+        return this.productSvc.findById(id, channel === 'wholesale' ? 'wholesale' : 'retail');
     }
     /** 兼容小程序端路径：/client/product/:id */
-    productDetailAlias(id) {
-        return this.productSvc.findById(id);
+    productDetailAlias(id, channel) {
+        return this.productSvc.findById(id, channel === 'wholesale' ? 'wholesale' : 'retail');
     }
 };
 exports.ClientCatalogController = ClientCatalogController;
@@ -107,13 +101,6 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], ClientCatalogController.prototype, "categoryList", null);
-__decorate([
-    (0, public_decorator_1.Public)(),
-    (0, common_1.Get)('brands'),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
-    __metadata("design:returntype", void 0)
-], ClientCatalogController.prototype, "brandList", null);
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Get)('products'),
@@ -142,22 +129,23 @@ __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Get)('products/:id'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Query)('channel')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number]),
+    __metadata("design:paramtypes", [Number, String]),
     __metadata("design:returntype", void 0)
 ], ClientCatalogController.prototype, "productDetail", null);
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Get)('product/:id'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Query)('channel')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number]),
+    __metadata("design:paramtypes", [Number, String]),
     __metadata("design:returntype", void 0)
 ], ClientCatalogController.prototype, "productDetailAlias", null);
 exports.ClientCatalogController = ClientCatalogController = __decorate([
     (0, common_1.Controller)('client'),
     __metadata("design:paramtypes", [product_service_1.ProductService,
-        category_service_1.CategoryService,
-        brand_service_1.BrandService])
+        category_service_1.CategoryService])
 ], ClientCatalogController);
 //# sourceMappingURL=client-catalog.controller.js.map

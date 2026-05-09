@@ -17,6 +17,7 @@ exports.LogisticsWebhookController = void 0;
 const common_1 = require("@nestjs/common");
 const public_decorator_1 = require("../../common/decorators/public.decorator");
 const kuaidi100_service_1 = require("./kuaidi100.service");
+const order_service_1 = require("../order/order.service");
 /**
  * 快递100 Webhook 推送固定应答（无论业务处理是否成功都必须返回，否则 KD100 会持续重试）
  */
@@ -26,8 +27,9 @@ const KD100_ACK = {
     message: '成功',
 };
 let LogisticsWebhookController = LogisticsWebhookController_1 = class LogisticsWebhookController {
-    constructor(kd100) {
+    constructor(kd100, orderService) {
         this.kd100 = kd100;
+        this.orderService = orderService;
         this.logger = new common_1.Logger(LogisticsWebhookController_1.name);
     }
     /**
@@ -76,12 +78,13 @@ let LogisticsWebhookController = LogisticsWebhookController_1 = class LogisticsW
         return KD100_ACK;
     }
     /**
-     * 内部派发：把推送 payload 交给真正的业务模块（更新订单轨迹/状态、推企业微信群等）
+     * 内部派发：把推送 payload 交给 OrderService 做状态机推进 + 企业微信通知
      *
-     * TODO: 接入 OrderService.applyKuaidi100Push(payload) 之后，把 lastResult.data
-     *       写到订单的物流轨迹表，并按 lastResult.state / status 推动订单状态机：
-     *         - "3" 已签收 -> 自动确认收货 / 标记为 completed
-     *         - "4" 退签 / "7" 拒签 -> 触发退款流程
+     * 业务行为：
+     *   - state=3 已签收 -> 自动确认收货 + 推群"已签收"
+     *   - state=4 退签 / 7 拒签 -> 推群"已退签 / 已拒签"
+     *   - state=2 疑难 -> 推群"物流异常"
+     *   - 其他在途状态 -> 仅记日志，不打扰运营
      */
     async dispatch(payload) {
         const lr = payload?.lastResult;
@@ -89,8 +92,15 @@ let LogisticsWebhookController = LogisticsWebhookController_1 = class LogisticsW
         const com = lr?.com || '';
         const state = lr?.state || lr?.status || '';
         const tracks = Array.isArray(lr?.data) ? lr.data.length : 0;
+        // 最新一条轨迹文案（KD100 返回 desc 排序，data[0] 即最新）
+        const lastContext = Array.isArray(lr?.data) && lr.data.length > 0 ? lr.data[0]?.context : '';
         this.logger.log(`[Kuaidi100][Webhook] 收到推送 com=${com} num=${num} state=${state} tracks=${tracks} status=${payload?.status}`);
-        // 此处先打日志占位，等 OrderModule 暴露写库方法后再 wire 起来
+        await this.orderService.applyKuaidi100Push({
+            state,
+            company: com,
+            trackingNo: num,
+            lastContext,
+        });
     }
 };
 exports.LogisticsWebhookController = LogisticsWebhookController;
@@ -105,6 +115,8 @@ __decorate([
 ], LogisticsWebhookController.prototype, "handleKuaidi100Callback", null);
 exports.LogisticsWebhookController = LogisticsWebhookController = LogisticsWebhookController_1 = __decorate([
     (0, common_1.Controller)('kuaidi100'),
-    __metadata("design:paramtypes", [kuaidi100_service_1.Kuaidi100Service])
+    __param(1, (0, common_1.Inject)((0, common_1.forwardRef)(() => order_service_1.OrderService))),
+    __metadata("design:paramtypes", [kuaidi100_service_1.Kuaidi100Service,
+        order_service_1.OrderService])
 ], LogisticsWebhookController);
 //# sourceMappingURL=logistics-webhook.controller.js.map

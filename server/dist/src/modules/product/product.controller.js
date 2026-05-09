@@ -30,14 +30,6 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Number)
-], ProductQueryDto.prototype, "brandId", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    __metadata("design:type", String)
-], ProductQueryDto.prototype, "craft", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    __metadata("design:type", Number)
 ], ProductQueryDto.prototype, "status", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
@@ -58,19 +50,6 @@ __decorate([
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], ProductDto.prototype, "categoryId", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], ProductDto.prototype, "brandId", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    __metadata("design:type", String)
-], ProductDto.prototype, "craft", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    __metadata("design:type", String)
-], ProductDto.prototype, "material", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
@@ -119,6 +98,14 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Array)
 ], ProductDto.prototype, "dealerLevels", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Boolean)
+], ProductDto.prototype, "freeShipping", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Number)
+], ProductDto.prototype, "shippingFee", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Number)

@@ -24,6 +24,11 @@ __decorate([
     (0, class_validator_1.IsNotEmpty)({ message: 'code 不能为空' }),
     __metadata("design:type", String)
 ], WxLoginDto.prototype, "code", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['retail', 'wholesale']),
+    __metadata("design:type", String)
+], WxLoginDto.prototype, "channel", void 0);
 class PhoneLoginDto {
 }
 __decorate([
@@ -34,6 +39,11 @@ __decorate([
     (0, class_validator_1.IsNotEmpty)({ message: '验证码不能为空' }),
     __metadata("design:type", String)
 ], PhoneLoginDto.prototype, "code", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['retail', 'wholesale']),
+    __metadata("design:type", String)
+], PhoneLoginDto.prototype, "channel", void 0);
 class BindPhoneDto {
 }
 __decorate([
@@ -45,14 +55,14 @@ let ClientAuthController = class ClientAuthController {
         this.svc = svc;
     }
     miniLogin(dto) {
-        return this.svc.miniLogin(dto.code);
+        return this.svc.miniLogin(dto.code, dto.channel || 'retail');
     }
     // 文档中常用别名；与 mini-login 等价
     wechatLogin(dto) {
-        return this.svc.miniLogin(dto.code);
+        return this.svc.miniLogin(dto.code, dto.channel || 'retail');
     }
     phoneLogin(dto) {
-        return this.svc.phoneLogin(dto.phone, dto.code);
+        return this.svc.phoneLogin(dto.phone, dto.code, dto.channel || 'retail');
     }
     bindPhone(user, dto) {
         return this.svc.bindPhone(user.sub, dto.phone);

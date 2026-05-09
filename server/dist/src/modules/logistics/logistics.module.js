@@ -11,12 +11,15 @@ const axios_1 = require("@nestjs/axios");
 const common_1 = require("@nestjs/common");
 const kuaidi100_service_1 = require("./kuaidi100.service");
 const logistics_webhook_controller_1 = require("./logistics-webhook.controller");
+const order_module_1 = require("../order/order.module");
 let LogisticsModule = class LogisticsModule {
 };
 exports.LogisticsModule = LogisticsModule;
 exports.LogisticsModule = LogisticsModule = __decorate([
     (0, common_1.Module)({
-        imports: [axios_1.HttpModule],
+        // OrderModule 反向注入 OrderService 用于 webhook → 订单状态机推进
+        // 由于 OrderModule 也 import LogisticsModule，必须用 forwardRef 解循环依赖
+        imports: [axios_1.HttpModule, (0, common_1.forwardRef)(() => order_module_1.OrderModule)],
         controllers: [logistics_webhook_controller_1.LogisticsWebhookController],
         providers: [kuaidi100_service_1.Kuaidi100Service],
         exports: [kuaidi100_service_1.Kuaidi100Service],

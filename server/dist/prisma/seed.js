@@ -40,14 +40,12 @@ async function main() {
     console.log('[seed] 开始写入种子数据...');
     // 清理（按依赖顺序）
     await prisma.statement.deleteMany();
-    await prisma.stockLog.deleteMany();
     await prisma.stock.deleteMany();
     await prisma.orderItem.deleteMany();
     await prisma.order.deleteMany();
     await prisma.priceTier.deleteMany();
     await prisma.sku.deleteMany();
     await prisma.product.deleteMany();
-    await prisma.brand.deleteMany();
     await prisma.category.deleteMany();
     await prisma.warehouse.deleteMany();
     await prisma.address.deleteMany();
@@ -77,7 +75,7 @@ async function main() {
             data: {
                 code: 'product_mgr',
                 name: '商品运营',
-                description: '管理商品、分类、品牌、库存',
+                description: '管理商品、分类、库存',
                 menuPerms: ['dashboard', 'product:*', 'inventory:*'],
                 dataPerms: { scope: 'all' },
                 sort: 2,
@@ -127,29 +125,7 @@ async function main() {
             roles: { create: [{ roleId: orderMgr.id }] },
         },
     });
-    // 3. 字典：工艺 / 胎质
-    await prisma.dictType.createMany({
-        data: [
-            { code: 'craft', name: '工艺', sort: 1 },
-            { code: 'material', name: '胎质', sort: 2 },
-        ],
-    });
-    await prisma.dictItem.createMany({
-        data: [
-            { typeCode: 'craft', label: '青花', value: '青花', sort: 1 },
-            { typeCode: 'craft', label: '釉里红', value: '釉里红', sort: 2 },
-            { typeCode: 'craft', label: '粉彩', value: '粉彩', sort: 3 },
-            { typeCode: 'craft', label: '汝窑', value: '汝窑', sort: 4 },
-            { typeCode: 'craft', label: '玉瓷', value: '玉瓷', sort: 5 },
-            { typeCode: 'craft', label: '结晶釉', value: '结晶釉', sort: 6 },
-            { typeCode: 'craft', label: '手绘', value: '手绘', sort: 7 },
-            { typeCode: 'material', label: '高岭土', value: '高岭土', sort: 1 },
-            { typeCode: 'material', label: '紫砂', value: '紫砂', sort: 2 },
-            { typeCode: 'material', label: '骨瓷', value: '骨瓷', sort: 3 },
-            { typeCode: 'material', label: '青瓷土', value: '青瓷土', sort: 4 },
-            { typeCode: 'material', label: '羊脂玉白瓷', value: '羊脂玉白瓷', sort: 5 },
-        ],
-    });
+    // 3. 字典（v2 简化：移除工艺 / 胎质字典；保留为空，留待业务侧自定义）
     // 4. 会员等级
     const [bronze, silver, gold, diamond] = await Promise.all([
         prisma.userLevel.create({ data: { code: 'bronze', name: '普通', minSpent: 0, discount: 1.0, pointsRate: 1.0 } }),
@@ -173,18 +149,7 @@ async function main() {
     await prisma.category.create({
         data: { code: 'C002001', name: '家用花瓶', sort: 1, level: 2, parentId: cateHua.id },
     });
-    // 6. 品牌
-    const [brandY, brandJ, brandR] = await Promise.all([
-        prisma.brand.create({
-            data: { code: 'YANGMING', name: '央茗', country: '中国', origin: '江西景德镇', story: '中国高端陶瓷品牌', sort: 1 },
-        }),
-        prisma.brand.create({
-            data: { code: 'JINGDE', name: '景德陶韵', country: '中国', origin: '江西景德镇', sort: 2 },
-        }),
-        prisma.brand.create({
-            data: { code: 'RUYAO', name: '汝窑世家', country: '中国', origin: '河南宝丰', sort: 3 },
-        }),
-    ]);
+    // 6. 品牌（v2 简化：已移除品牌实体）
     // 7. 仓库
     const [whMain, whJD] = await Promise.all([
         prisma.warehouse.create({
@@ -200,9 +165,6 @@ async function main() {
             code: 'P-CHA-001',
             name: '青花瓷功夫茶具一套·六件装',
             categoryId: cateChabei.id,
-            brandId: brandY.id,
-            craft: '手绘',
-            material: '高岭土',
             mainImage: '/placeholder.svg',
             images: ['/placeholder.svg', '/placeholder.svg'],
             detail: '<p>精选景德镇高岭土，匠心手绘青花，茶壶+四茶杯+茶盘一套六件</p>',
@@ -228,7 +190,6 @@ async function main() {
             retailPrice: 398,
             memberPrice: 358,
             costPrice: 180,
-            stock: 156,
             weight: 2.5,
         },
     });
@@ -241,16 +202,15 @@ async function main() {
             retailPrice: 458,
             memberPrice: 418,
             costPrice: 210,
-            stock: 68,
             weight: 3.0,
         },
     });
     // 多仓库存
     await prisma.stock.createMany({
         data: [
-            { skuId: sku1a.id, warehouseId: whMain.id, onHand: 120, reserved: 30 },
-            { skuId: sku1a.id, warehouseId: whJD.id, onHand: 66, reserved: 0 },
-            { skuId: sku1b.id, warehouseId: whMain.id, onHand: 68, reserved: 0 },
+            { skuId: sku1a.id, warehouseId: whMain.id, onHand: 120 },
+            { skuId: sku1a.id, warehouseId: whJD.id, onHand: 66 },
+            { skuId: sku1b.id, warehouseId: whMain.id, onHand: 68 },
         ],
     });
     // 阶梯价
@@ -266,9 +226,6 @@ async function main() {
             code: 'P-HUA-001',
             name: '羊脂玉白骨瓷花瓶',
             categoryId: cateHua.id,
-            brandId: brandJ.id,
-            craft: '拉坯',
-            material: '骨瓷',
             mainImage: '/placeholder.svg',
             tags: ['新品'],
             retailEnabled: true,
@@ -290,12 +247,11 @@ async function main() {
             retailPrice: 1299,
             memberPrice: 1099,
             costPrice: 580,
-            stock: 8,
             weight: 3.5,
         },
     });
     await prisma.stock.create({
-        data: { skuId: sku2a.id, warehouseId: whMain.id, onHand: 8, reserved: 52, warnMin: 20 },
+        data: { skuId: sku2a.id, warehouseId: whMain.id, onHand: 8 },
     });
     await prisma.priceTier.createMany({
         data: [
@@ -308,9 +264,6 @@ async function main() {
             code: 'P-CHA-002',
             name: '汝窑开片主人杯',
             categoryId: cateChabei.id,
-            brandId: brandR.id,
-            craft: '釉下彩',
-            material: '瓷土',
             mainImage: '/placeholder.svg',
             retailEnabled: true,
             retailPrice: 288,
@@ -328,12 +281,11 @@ async function main() {
             image: '/placeholder.svg',
             retailPrice: 288,
             memberPrice: 258,
-            stock: 386,
             weight: 0.3,
         },
     });
     await prisma.stock.create({
-        data: { skuId: sku3a.id, warehouseId: whMain.id, onHand: 386, reserved: 114 },
+        data: { skuId: sku3a.id, warehouseId: whMain.id, onHand: 386 },
     });
     await prisma.priceTier.createMany({
         data: [

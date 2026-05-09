@@ -12,12 +12,15 @@ const jwt_1 = require("@nestjs/jwt");
 const config_1 = require("@nestjs/config");
 const client_auth_controller_1 = require("./client-auth.controller");
 const client_auth_service_1 = require("./client-auth.service");
+const client_module_1 = require("../client/client.module");
 let ClientAuthModule = class ClientAuthModule {
 };
 exports.ClientAuthModule = ClientAuthModule;
 exports.ClientAuthModule = ClientAuthModule = __decorate([
     (0, common_1.Module)({
         imports: [
+            // 引入 ClientModule 拿 WechatPayService（按 channel 解析 AppID/Secret）
+            client_module_1.ClientModule,
             // 注入 JwtService（与管理端 AuthModule 共用同一 JWT_SECRET，保证三端 token 互通）
             jwt_1.JwtModule.registerAsync({
                 inject: [config_1.ConfigService],

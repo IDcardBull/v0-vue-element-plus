@@ -13,12 +13,15 @@ const order_service_1 = require("./order.service");
 const inventory_module_1 = require("../inventory/inventory.module");
 const price_tier_module_1 = require("../price-tier/price-tier.module");
 const wechat_pay_service_1 = require("../client/wechat-pay.service");
+const logistics_module_1 = require("../logistics/logistics.module");
 let OrderModule = class OrderModule {
 };
 exports.OrderModule = OrderModule;
 exports.OrderModule = OrderModule = __decorate([
     (0, common_1.Module)({
-        imports: [inventory_module_1.InventoryModule, price_tier_module_1.PriceTierModule],
+        // LogisticsModule 提供 Kuaidi100Service，反向也要拿 OrderService → 用 forwardRef
+        // NotifyModule 已标 @Global，不必 import
+        imports: [inventory_module_1.InventoryModule, price_tier_module_1.PriceTierModule, (0, common_1.forwardRef)(() => logistics_module_1.LogisticsModule)],
         controllers: [order_controller_1.OrderController],
         providers: [order_service_1.OrderService, wechat_pay_service_1.WechatPayService],
         exports: [order_service_1.OrderService],

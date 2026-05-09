@@ -42,11 +42,16 @@ let ClientPayController = ClientPayController_1 = class ClientPayController {
         const u = await this.prisma.user.findUnique({ where: { id: user.sub } });
         if (!u?.openid)
             throw new common_1.BadRequestException('用户缺少 openid，需先通过微信登录');
+        // 用户登录时记录的 appChannel 决定下单时给微信传哪个 AppID。
+        // 注意：openid 是按 AppID 隔离的，零售小程序 openid 不能用批发 AppID 下单（反之亦然），
+        // 否则会触发 APPID_MCHID_NOT_MATCH 或 OPENID_NOT_BELONG_TO_APPID。
+        const channel = (u.appChannel === 'wholesale' ? 'wholesale' : 'retail');
         return this.wxpay.jsapi({
             openid: u.openid,
             orderNo: order.orderNo,
             amountYuan: Number(order.totalAmount),
             description: `订单 ${order.orderNo}`,
+            channel,
         });
     }
     /**

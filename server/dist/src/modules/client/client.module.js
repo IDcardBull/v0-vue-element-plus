@@ -10,7 +10,6 @@ exports.ClientModule = void 0;
 const common_1 = require("@nestjs/common");
 const product_module_1 = require("../product/product.module");
 const category_module_1 = require("../category/category.module");
-const brand_module_1 = require("../brand/brand.module");
 const order_module_1 = require("../order/order.module");
 const client_catalog_controller_1 = require("./client-catalog.controller");
 const client_user_controller_1 = require("./client-user.controller");
@@ -29,7 +28,7 @@ let ClientModule = class ClientModule {
 exports.ClientModule = ClientModule;
 exports.ClientModule = ClientModule = __decorate([
     (0, common_1.Module)({
-        imports: [product_module_1.ProductModule, category_module_1.CategoryModule, brand_module_1.BrandModule, order_module_1.OrderModule],
+        imports: [product_module_1.ProductModule, category_module_1.CategoryModule, order_module_1.OrderModule],
         controllers: [
             client_catalog_controller_1.ClientCatalogController,
             client_user_controller_1.ClientUserController,
@@ -40,6 +39,8 @@ exports.ClientModule = ClientModule = __decorate([
             wechat_pay_notify_controller_1.WechatPayNotifyController,
         ],
         providers: [client_address_service_1.ClientAddressService, wechat_pay_service_1.WechatPayService],
+        // 导出 WechatPayService 给 ClientAuthModule 使用（多端 AppID 登录）
+        exports: [wechat_pay_service_1.WechatPayService],
     })
 ], ClientModule);
 //# sourceMappingURL=client.module.js.map

@@ -18,7 +18,6 @@ const role_module_1 = require("./modules/role/role.module");
 const log_module_1 = require("./modules/log/log.module");
 const dashboard_module_1 = require("./modules/dashboard/dashboard.module");
 const category_module_1 = require("./modules/category/category.module");
-const brand_module_1 = require("./modules/brand/brand.module");
 const product_module_1 = require("./modules/product/product.module");
 const sku_module_1 = require("./modules/sku/sku.module");
 const price_tier_module_1 = require("./modules/price-tier/price-tier.module");
@@ -30,6 +29,9 @@ const client_module_1 = require("./modules/client/client.module");
 const upload_module_1 = require("./modules/upload/upload.module");
 const dict_module_1 = require("./modules/dict/dict.module");
 const logistics_module_1 = require("./modules/logistics/logistics.module");
+const notify_module_1 = require("./modules/notify/notify.module");
+const customer_module_1 = require("./modules/customer/customer.module");
+const distributor_module_1 = require("./modules/distributor/distributor.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -44,7 +46,6 @@ exports.AppModule = AppModule = __decorate([
             role_module_1.RoleModule,
             dashboard_module_1.DashboardModule,
             category_module_1.CategoryModule,
-            brand_module_1.BrandModule,
             product_module_1.ProductModule,
             sku_module_1.SkuModule,
             price_tier_module_1.PriceTierModule,
@@ -56,6 +57,9 @@ exports.AppModule = AppModule = __decorate([
             upload_module_1.UploadModule,
             dict_module_1.DictModule,
             logistics_module_1.LogisticsModule,
+            notify_module_1.NotifyModule,
+            customer_module_1.CustomerModule,
+            distributor_module_1.DistributorModule,
         ],
         providers: [
             // 默认所有路由需要 JWT；接口上用 @Public() 放行
