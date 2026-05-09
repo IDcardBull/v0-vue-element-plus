@@ -52,7 +52,7 @@ const routes: RouteRecordRaw[] = [
             path: 'retail-banners',
             name: 'ProductRetailBanners',
             component: () => import('@/views/product/HomeBannerConfig.vue'),
-            meta: { title: '轮播图设置', hidden: true },
+            meta: { title: '零售首页轮播' },
           },
           {
             path: 'create',
