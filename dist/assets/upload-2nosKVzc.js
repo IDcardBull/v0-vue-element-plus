@@ -1,1 +1,0 @@
-import{s as o}from"./_plugin-vue_export-helper-D7xNGquB.js";function a(e){const t=new FormData;return t.append("file",e),o.post("/upload",t,{headers:{"Content-Type":"multipart/form-data"},timeout:3e4})}const r={file:a};export{r as u};

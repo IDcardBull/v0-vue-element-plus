@@ -1,0 +1,1 @@
+import{s as p}from"./_plugin-vue_export-helper-CEx894oD.js";const s={list:()=>p.get("/admin/shipping-templates"),detail:e=>p.get(`/admin/shipping-templates/${e}`),create:e=>p.post("/admin/shipping-templates",e),update:(e,t)=>p.patch(`/admin/shipping-templates/${e}`,t),remove:e=>p.delete(`/admin/shipping-templates/${e}`)};export{s};
