@@ -54,6 +54,7 @@ export const menuData: MenuItem[] = [
     title: '系统管理',
     icon: 'Setting',
     children: [
+      { index: '/system/shipping-template', title: '运费模板', icon: 'Van' },
       { index: '/system/account', title: '账号管理', icon: 'Avatar' },
       { index: '/system/role', title: '角色权限', icon: 'Key' },
       { index: '/system/log', title: '操作日志', icon: 'Memo' },

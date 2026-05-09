@@ -32,6 +32,8 @@ const logistics_module_1 = require("./modules/logistics/logistics.module");
 const notify_module_1 = require("./modules/notify/notify.module");
 const customer_module_1 = require("./modules/customer/customer.module");
 const distributor_module_1 = require("./modules/distributor/distributor.module");
+const banner_module_1 = require("./modules/banner/banner.module");
+const shipping_template_module_1 = require("./modules/shipping-template/shipping-template.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -60,6 +62,8 @@ exports.AppModule = AppModule = __decorate([
             notify_module_1.NotifyModule,
             customer_module_1.CustomerModule,
             distributor_module_1.DistributorModule,
+            banner_module_1.BannerModule,
+            shipping_template_module_1.ShippingTemplateModule,
         ],
         providers: [
             // 默认所有路由需要 JWT；接口上用 @Public() 放行
