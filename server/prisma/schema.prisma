@@ -493,3 +493,27 @@ model HomeBanner {
   @@index([enabled, sort])
   @@map("home_banners")
 }
+
+// =====================================================================
+// 运费模板（B2C 零售）
+// PC 后台 /system/shipping-template 维护。结构：
+//   - calcType: 1 按件 / 2 按重量
+//   - defaultRule: 默认全国发货首件/首费/续件/续费
+//   - specialRules: 指定地区特殊运费数组
+//   - freeShipping*: 满额/满件包邮规则（可关闭）
+// 复杂规则用 Json 字段存，避免子表造成的级联维护成本。
+// =====================================================================
+
+model ShippingTemplate {
+  id                   Int      @id @default(autoincrement())
+  name                 String   @unique @db.VarChar(128)
+  calcType             Int      @default(1) @map("calc_type") // 1 按件 / 2 按重量
+  defaultRule          Json     @map("default_rule") // { firstAmount, firstPrice, continueAmount, continuePrice }
+  specialRules         Json     @default("[]") @map("special_rules") // [{ regions, ... }]
+  freeShippingEnabled  Boolean  @default(false) @map("free_shipping_enabled")
+  freeShippingRules    Json     @default("[]") @map("free_shipping_rules") // [{ regions, threshold }]
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("shipping_templates")
+}

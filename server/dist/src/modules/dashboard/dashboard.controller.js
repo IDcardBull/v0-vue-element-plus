@@ -21,8 +21,8 @@ let DashboardController = class DashboardController {
     constructor(dashboardService) {
         this.dashboardService = dashboardService;
     }
-    overview() {
-        return this.dashboardService.overview();
+    overview(channel) {
+        return this.dashboardService.overview(channel);
     }
     salesTrend(days) {
         return this.dashboardService.salesTrend(days ? Number(days) : 30);
@@ -34,8 +34,9 @@ let DashboardController = class DashboardController {
 exports.DashboardController = DashboardController;
 __decorate([
     (0, common_1.Get)('overview'),
+    __param(0, (0, common_1.Query)('channel')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], DashboardController.prototype, "overview", null);
 __decorate([
