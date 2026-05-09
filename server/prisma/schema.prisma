@@ -285,9 +285,12 @@ model Product {
   minWholesaleQty  Int     @default(1) @map("min_wholesale_qty")
   dealerLevels     Json?   @map("dealer_levels") // ['normal','silver','gold','diamond']
 
-  // 物流配置（结合用户地址做远近分区运费时再扩展为 ShippingTemplate）
-  freeShipping     Boolean @default(false) @map("free_shipping") // 是否包邮
-  shippingFee      Decimal @default(0)     @map("shipping_fee") @db.Decimal(10, 2) // 默认运费，freeShipping=true 时忽略
+  // 物流配置：优先级 shippingTemplateId > freeShipping/shippingFee
+  //   - 选了运费模板 → 下单时按模板（默认规则/特殊地区/满额包邮）计算
+  //   - 未选模板    → 回退到旧字段：freeShipping=true 则免邮，否则按 shippingFee
+  shippingTemplateId Int?    @map("shipping_template_id")
+  freeShipping       Boolean @default(false) @map("free_shipping") // 兼容字段
+  shippingFee        Decimal @default(0)     @map("shipping_fee") @db.Decimal(10, 2) // 兼容字段，freeShipping=true 时忽略
 
   // 共用
   salesCount       Int     @default(0) @map("sales_count") // 累计销量
@@ -297,11 +300,13 @@ model Product {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  skus         Sku[]
-  orderItems   OrderItem[]
+  category         Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  shippingTemplate ShippingTemplate? @relation(fields: [shippingTemplateId], references: [id], onDelete: SetNull)
+  skus             Sku[]
+  orderItems       OrderItem[]
 
   @@index([categoryId])
+  @@index([shippingTemplateId])
   @@index([status, retailEnabled, wholesaleEnabled])
   @@map("products")
 }
@@ -514,6 +519,8 @@ model ShippingTemplate {
   freeShippingRules    Json     @default("[]") @map("free_shipping_rules") // [{ regions, threshold }]
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
+
+  products             Product[]
 
   @@map("shipping_templates")
 }

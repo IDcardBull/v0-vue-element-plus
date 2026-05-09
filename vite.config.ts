@@ -21,6 +21,11 @@ export default defineConfig({
         target: process.env.VITE_API_TARGET || 'http://localhost:3001',
         changeOrigin: true,
       },
+      // 上传后图片走 /uploads/xxx.jpg —— 同样代理到后端
+      '/uploads': {
+        target: process.env.VITE_API_TARGET || 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   },
 })

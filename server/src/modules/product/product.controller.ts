@@ -32,7 +32,8 @@ class ProductDto {
   @IsOptional() wholesaleEnabled?: boolean
   @IsOptional() minWholesaleQty?: number
   @IsOptional() dealerLevels?: string[]
-  // 物流配置（管理端基础信息区，结合用户地址做远近运费时再扩展为模板）
+  // 物流配置：优先用运费模板；未选模板时回退到 freeShipping/shippingFee
+  @IsOptional() @IsInt() shippingTemplateId?: number | null
   @IsOptional() freeShipping?: boolean
   @IsOptional() shippingFee?: number
   @IsOptional() status?: number

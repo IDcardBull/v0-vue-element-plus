@@ -34,8 +34,9 @@ export class UploadController {
   upload(@UploadedFile() file?: any) {
     if (!file) throw new BadRequestException('请上传 file 文件')
 
-    const port = Number(process.env.PORT) || 3001
-    const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://127.0.0.1:${port}`
+    // 默认返回相对路径，部署到任意域名/端口都不会失效；
+    // 如需返回绝对地址（如对接 CDN / 跨域 H5），可在 .env 设置 PUBLIC_BASE_URL=https://cdn.example.com
+    const publicBaseUrl = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '')
 
     if (file.filename) {
       return {
