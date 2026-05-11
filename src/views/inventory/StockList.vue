@@ -203,6 +203,31 @@ async function loadWarehouses() {
   }
 }
 
+function formatSpec(spec: unknown) {
+  if (!spec) return '默认规格'
+  if (typeof spec === 'string') {
+    const text = spec.trim()
+    if (!text) return '默认规格'
+    try {
+      return formatSpec(JSON.parse(text))
+    } catch {
+      return text
+    }
+  }
+  if (Array.isArray(spec)) {
+    const text = spec.map((item) => String(item || '').trim()).filter(Boolean).join(' / ')
+    return text || '默认规格'
+  }
+  if (typeof spec === 'object') {
+    const text = Object.values(spec as Record<string, unknown>)
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .join(' / ')
+    return text || '默认规格'
+  }
+  return String(spec)
+}
+
 async function loadList() {
   loading.value = true
   loadError.value = ''
@@ -211,12 +236,9 @@ async function loadList() {
       page: pagination.page,
       pageSize: pagination.size,
     }
-    // 兼容后端：仍然透传 keyword（合并 SKU/商品/规格关键字），并附带细分参数
     const sku = filter.skuCode.trim()
     const name = filter.productName.trim()
     const spec = filter.spec.trim()
-    const keyword = [sku, name, spec].filter(Boolean).join(' ').trim()
-    if (keyword) params.keyword = keyword
     if (sku) params.skuCode = sku
     if (name) params.productName = name
     if (spec) params.spec = spec
@@ -230,7 +252,7 @@ async function loadList() {
       warehouseId: Number(r.warehouseId ?? r.warehouse?.id ?? 0),
       sku: r.sku?.code || r.skuCode || '',
       productName: r.sku?.product?.name || r.productName || '',
-      spec: r.sku?.specs || r.spec || '',
+      spec: formatSpec(r.sku?.specs ?? r.spec),
       image: r.sku?.image || r.sku?.product?.mainImage || '/placeholder.svg',
       category: r.sku?.product?.category?.name || r.category || '',
       warehouseName: r.warehouse?.name || r.warehouseName || '主仓',

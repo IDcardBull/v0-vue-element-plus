@@ -29,22 +29,80 @@ let InventoryService = class InventoryService {
         });
     }
     // -------------------- 实时库存 --------------------
+    stockInclude() {
+        return {
+            warehouse: { select: { id: true, name: true, code: true } },
+            sku: {
+                select: {
+                    id: true,
+                    code: true,
+                    specs: true,
+                    image: true,
+                    product: {
+                        select: {
+                            id: true,
+                            code: true,
+                            name: true,
+                            mainImage: true,
+                            category: { select: { name: true } },
+                        },
+                    },
+                },
+            },
+        };
+    }
+    specText(specs) {
+        if (!specs)
+            return '';
+        if (typeof specs === 'string')
+            return specs;
+        if (Array.isArray(specs))
+            return specs.map((v) => String(v ?? '')).join(' ');
+        if (typeof specs === 'object')
+            return Object.values(specs).map((v) => String(v ?? '')).join(' ');
+        return String(specs);
+    }
     async stockList(q) {
         const page = Number(q.page) || 1;
         const pageSize = Number(q.pageSize) || 20;
+        const skuCode = (q.skuCode || '').trim();
+        const productName = (q.productName || '').trim();
+        const spec = (q.spec || '').trim();
+        const keyword = (q.keyword || '').trim();
         const where = {};
         if (q.warehouseId)
             where.warehouseId = Number(q.warehouseId);
-        if (q.keyword || q.categoryId) {
-            where.sku = {
-                OR: q.keyword
-                    ? [
-                        { code: { contains: q.keyword } },
-                        { product: { name: { contains: q.keyword } } },
-                        { product: { code: { contains: q.keyword } } },
-                    ]
-                    : undefined,
-                product: q.categoryId ? { categoryId: Number(q.categoryId) } : undefined,
+        const skuWhere = {};
+        if (skuCode)
+            skuWhere.code = { contains: skuCode };
+        if (productName || q.categoryId) {
+            skuWhere.product = {
+                ...(productName ? { name: { contains: productName } } : {}),
+                ...(q.categoryId ? { categoryId: Number(q.categoryId) } : {}),
+            };
+        }
+        if (keyword && !skuCode && !productName && !spec) {
+            skuWhere.OR = [
+                { code: { contains: keyword } },
+                { product: { name: { contains: keyword } } },
+                { product: { code: { contains: keyword } } },
+            ];
+        }
+        if (Object.keys(skuWhere).length)
+            where.sku = skuWhere;
+        const include = this.stockInclude();
+        if (spec) {
+            const rows = await this.prisma.stock.findMany({
+                where,
+                orderBy: [{ id: 'desc' }],
+                include,
+            });
+            const filtered = rows.filter((row) => this.specText(row.sku?.specs).includes(spec));
+            return {
+                list: filtered.slice((page - 1) * pageSize, page * pageSize),
+                total: filtered.length,
+                page,
+                pageSize,
             };
         }
         const [list, total] = await this.prisma.$transaction([
@@ -53,30 +111,25 @@ let InventoryService = class InventoryService {
                 orderBy: [{ id: 'desc' }],
                 skip: (page - 1) * pageSize,
                 take: pageSize,
-                include: {
-                    warehouse: { select: { id: true, name: true, code: true } },
-                    sku: {
-                        select: {
-                            id: true,
-                            code: true,
-                            specs: true,
-                            image: true,
-                            product: {
-                                select: {
-                                    id: true,
-                                    code: true,
-                                    name: true,
-                                    mainImage: true,
-                                    category: { select: { name: true } },
-                                },
-                            },
-                        },
-                    },
-                },
+                include,
             }),
             this.prisma.stock.count({ where }),
         ]);
         return { list, total, page, pageSize };
+    }
+    async updateStock(id, onHand) {
+        const stock = await this.prisma.stock.findUnique({
+            where: { id },
+            select: { id: true },
+        });
+        if (!stock)
+            throw new common_1.NotFoundException('库存记录不存在');
+        const safe = Math.max(Number(onHand) || 0, 0);
+        return this.prisma.stock.update({
+            where: { id },
+            data: { onHand: safe },
+            include: this.stockInclude(),
+        });
     }
 };
 exports.InventoryService = InventoryService;

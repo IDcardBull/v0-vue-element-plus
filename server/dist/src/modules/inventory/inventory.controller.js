@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.InventoryController = void 0;
 const common_1 = require("@nestjs/common");
 const class_validator_1 = require("class-validator");
+const class_transformer_1 = require("class-transformer");
 const inventory_service_1 = require("./inventory.service");
 const pagination_dto_1 = require("../../common/dto/pagination.dto");
 class StockQueryDto extends pagination_dto_1.PaginationDto {
@@ -25,12 +26,34 @@ __decorate([
 ], StockQueryDto.prototype, "keyword", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], StockQueryDto.prototype, "skuCode", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], StockQueryDto.prototype, "productName", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], StockQueryDto.prototype, "spec", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
     __metadata("design:type", Number)
 ], StockQueryDto.prototype, "warehouseId", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
     __metadata("design:type", Number)
 ], StockQueryDto.prototype, "categoryId", void 0);
+class UpdateStockDto {
+}
+__decorate([
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], UpdateStockDto.prototype, "onHand", void 0);
 /**
  * 简化版（v2，2026-05）库存接口：
  * - GET /admin/inventory/warehouses 仓库列表
@@ -47,6 +70,9 @@ let InventoryController = class InventoryController {
     stocks(q) {
         return this.svc.stockList(q);
     }
+    updateStock(id, dto) {
+        return this.svc.updateStock(id, dto.onHand);
+    }
 };
 exports.InventoryController = InventoryController;
 __decorate([
@@ -62,6 +88,14 @@ __decorate([
     __metadata("design:paramtypes", [StockQueryDto]),
     __metadata("design:returntype", void 0)
 ], InventoryController.prototype, "stocks", null);
+__decorate([
+    (0, common_1.Patch)('stocks/:id'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, UpdateStockDto]),
+    __metadata("design:returntype", void 0)
+], InventoryController.prototype, "updateStock", null);
 exports.InventoryController = InventoryController = __decorate([
     (0, common_1.Controller)('admin/inventory'),
     __metadata("design:paramtypes", [inventory_service_1.InventoryService])

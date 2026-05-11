@@ -1,12 +1,23 @@
-import { Controller, Get, Query } from '@nestjs/common'
-import { IsOptional } from 'class-validator'
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Query } from '@nestjs/common'
+import { IsInt, IsOptional, Min } from 'class-validator'
+import { Type } from 'class-transformer'
 import { InventoryService } from './inventory.service'
 import { PaginationDto } from '@/common/dto/pagination.dto'
 
 class StockQueryDto extends PaginationDto {
   @IsOptional() keyword?: string
-  @IsOptional() warehouseId?: number
-  @IsOptional() categoryId?: number
+  @IsOptional() skuCode?: string
+  @IsOptional() productName?: string
+  @IsOptional() spec?: string
+  @IsOptional() @Type(() => Number) warehouseId?: number
+  @IsOptional() @Type(() => Number) categoryId?: number
+}
+
+class UpdateStockDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  onHand: number
 }
 
 /**
@@ -27,5 +38,10 @@ export class InventoryController {
   @Get('stocks')
   stocks(@Query() q: StockQueryDto) {
     return this.svc.stockList(q)
+  }
+
+  @Patch('stocks/:id')
+  updateStock(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateStockDto) {
+    return this.svc.updateStock(id, dto.onHand)
   }
 }
