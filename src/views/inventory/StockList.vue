@@ -43,12 +43,30 @@
     <!-- 筛选 -->
     <el-card class="filter-card" shadow="never">
       <el-form inline :model="filter" class="filter-form">
-        <el-form-item label="SKU / 商品">
+        <el-form-item label="SKU 编码">
           <el-input
-            v-model="filter.keyword"
-            placeholder="SKU 编码 / 商品名称"
+            v-model="filter.skuCode"
+            placeholder="精确/模糊匹配 SKU"
             clearable
-            style="width: 240px"
+            style="width: 200px"
+            @keyup.enter="handleSearch"
+          />
+        </el-form-item>
+        <el-form-item label="商品名称">
+          <el-input
+            v-model="filter.productName"
+            placeholder="商品名称关键字"
+            clearable
+            style="width: 200px"
+            @keyup.enter="handleSearch"
+          />
+        </el-form-item>
+        <el-form-item label="规格">
+          <el-input
+            v-model="filter.spec"
+            placeholder="规格关键字"
+            clearable
+            style="width: 180px"
             @keyup.enter="handleSearch"
           />
         </el-form-item>
@@ -71,13 +89,19 @@
             <el-image :src="row.image" fit="cover" style="width: 48px; height: 48px; border-radius: 4px" />
           </template>
         </el-table-column>
-        <el-table-column label="SKU / 商品" min-width="240">
+        <el-table-column label="SKU 编码" prop="sku" min-width="160">
           <template #default="{ row }">
-            <div class="sku-cell">
-              <div class="sku-code">{{ row.sku }}</div>
-              <div class="sku-name">{{ row.productName }}</div>
-              <div class="sku-spec">{{ row.spec || '默认规格' }}</div>
-            </div>
+            <span class="sku-code">{{ row.sku || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="商品名称" prop="productName" min-width="200">
+          <template #default="{ row }">
+            <span class="sku-name">{{ row.productName || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="规格" prop="spec" min-width="140">
+          <template #default="{ row }">
+            <span class="sku-spec">{{ row.spec || '默认规格' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="分类" prop="category" width="120">
@@ -152,7 +176,9 @@ interface StockRow {
 }
 
 const filter = reactive({
-  keyword: '',
+  skuCode: '',
+  productName: '',
+  spec: '',
   warehouseId: null as number | null,
 })
 
@@ -185,7 +211,15 @@ async function loadList() {
       page: pagination.page,
       pageSize: pagination.size,
     }
-    if (filter.keyword.trim()) params.keyword = filter.keyword.trim()
+    // 兼容后端：仍然透传 keyword（合并 SKU/商品/规格关键字），并附带细分参数
+    const sku = filter.skuCode.trim()
+    const name = filter.productName.trim()
+    const spec = filter.spec.trim()
+    const keyword = [sku, name, spec].filter(Boolean).join(' ').trim()
+    if (keyword) params.keyword = keyword
+    if (sku) params.skuCode = sku
+    if (name) params.productName = name
+    if (spec) params.spec = spec
     if (filter.warehouseId) params.warehouseId = filter.warehouseId
 
     const res: any = await inventoryApi.stockList(params)
@@ -254,7 +288,9 @@ function handleSearch() {
 }
 
 function handleReset() {
-  filter.keyword = ''
+  filter.skuCode = ''
+  filter.productName = ''
+  filter.spec = ''
   filter.warehouseId = null
   pagination.page = 1
   loadList()

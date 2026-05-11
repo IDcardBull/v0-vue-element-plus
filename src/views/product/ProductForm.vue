@@ -593,7 +593,7 @@ onMounted(async () => {
             </el-form-item>
           </el-col>
           <el-col :span="24">
-            <el-form-item label="商品标���">
+            <el-form-item label="商品标签">
               <el-select
                 v-model="form.tags"
                 multiple
@@ -605,16 +605,6 @@ onMounted(async () => {
               >
                 <el-option v-for="t in tagOptions" :key="t" :value="t" :label="t" />
               </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="起批数量">
-              <el-input-number
-                v-model="form.min_wholesale_qty"
-                :min="1"
-                :controls="false"
-                style="width: 100%"
-              />
             </el-form-item>
           </el-col>
           <el-col :span="8">

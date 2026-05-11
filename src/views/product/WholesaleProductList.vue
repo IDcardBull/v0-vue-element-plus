@@ -410,15 +410,7 @@ function levelTagType(l: DealerLevel) {
           </template>
         </el-table-column>
 
-        <el-table-column label="起批量" width="100" align="center">
-          <template #default="{ row }">
-            <template v-if="row.wholesale_enabled">
-              <div class="moq">{{ row.min_wholesale_qty }}</div>
-              <div class="moq-unit">件起批</div>
-            </template>
-            <span v-else class="text-placeholder">—</span>
-          </template>
-        </el-table-column>
+
 
 
         <el-table-column label="授权等级" min-width="200">
