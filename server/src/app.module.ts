@@ -25,6 +25,8 @@ import { CustomerModule } from './modules/customer/customer.module'
 import { DistributorModule } from './modules/distributor/distributor.module'
 import { BannerModule } from './modules/banner/banner.module'
 import { ShippingTemplateModule } from './modules/shipping-template/shipping-template.module'
+import { SettingModule } from './modules/setting/setting.module'
+import { FeedbackModule } from './modules/feedback/feedback.module'
 
 @Module({
   imports: [
@@ -52,6 +54,8 @@ import { ShippingTemplateModule } from './modules/shipping-template/shipping-tem
     DistributorModule,
     BannerModule,
     ShippingTemplateModule,
+    SettingModule,
+    FeedbackModule,
   ],
   providers: [
     // 默认所有路由需要 JWT；接口上用 @Public() 放行

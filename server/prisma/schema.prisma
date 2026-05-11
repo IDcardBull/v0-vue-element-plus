@@ -524,3 +524,38 @@ model ShippingTemplate {
 
   @@map("shipping_templates")
 }
+
+// =====================================================================
+// 客服反馈（B2C 小程序「客服」页提交，转发到企业微信群机器人）
+// =====================================================================
+model Feedback {
+  id        Int      @id @default(autoincrement())
+  type      String   @default("aftersale") @db.VarChar(32) // aftersale / consult / feedback
+  orderCode String   @default("") @map("order_code") @db.VarChar(64)
+  content   String   @db.VarChar(1000)
+  contact   String   @default("") @db.VarChar(128)
+  images    Json?
+  userId    Int?     @map("user_id")
+  status    Int      @default(0) // 0 待处理 / 1 已处理
+  forwarded Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([type, status])
+  @@index([createdAt])
+  @@map("feedbacks")
+}
+
+// =====================================================================
+// 系统设置（通用 key-value）
+// =====================================================================
+model Setting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique @db.VarChar(128)
+  value     String?  @db.Text
+  remark    String   @default("") @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
